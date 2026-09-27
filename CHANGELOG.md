@@ -8,6 +8,20 @@ Versionado [SemVer](https://semver.org/lang/es/).
 <!-- Los PRs agregan aca, sin elegir numero de version. Al publicar, esta seccion
      pasa a ser una version numerada con su fecha. Ver CONTRIBUTING.md. -->
 
+## [2.29.0] - 2026-09-26
+
+### Corregido
+
+- **Una boleta con 6 o más líneas de detalle la rechazaba el SII (RSC).** El DTE se armaba sin
+  ningún salto de línea, todo en UNA sola línea, y el SII rechaza con `CHR-00002: Line too long (4090)`
+  cualquier XML con una línea de más de unos 4090 caracteres. Una boleta de 7 líneas ya la
+  superaba; el formato permite hasta 60. Reproducido en un ambiente de certificación de forma
+  determinista: 10 líneas, `RSC`; 5 líneas, aceptada. Ahora `DTE` separa en su propia línea el
+  encabezado, cada `<Detalle>`, cada `<DscRcgGlobal>`, cada `<Referencia>` y el `<TED>`, ANTES de
+  canonicalizar y firmar, de modo que el digest cubre esos saltos igual que el SII al validar.
+  Verificado con el SII: boletas de 7, 10 y 40 líneas y una factura de 12 aceptadas. Aplica a
+  todos los tipos (boleta, factura, nota, guía). El contenido de los campos no cambia.
+
 ## [2.28.0] - 2026-09-26
 
 ### Corregido

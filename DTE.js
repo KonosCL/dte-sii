@@ -58,6 +58,10 @@ const CAMPOS_IDDOC_OPCIONALES = [
 // CLASE DTE
 // ============================================
 
+// Cierres tras los cuales se corta la línea (ver _buildXmlSinFirma). Solo elementos hermanos
+// dentro de <Documento>; nunca se toca el contenido de texto de un campo.
+const SALTO_ENTRE_ELEMENTOS = /<\/(Encabezado|Detalle|DscRcgGlobal|Referencia|TED)><(?=[A-Za-z])/g;
+
 class DTE {
   /**
    * @param {Object} datos - Datos del DTE (simplificado o estructurado)
@@ -398,6 +402,15 @@ class DTE {
     let dteXml = builder.build({ DTE: dteConVersion });
     dteXml = dteXml.replace('<TED>__TED_PLACEHOLDER__</TED>', this.tedXml);
     dteXml = dteXml.replace('<TmstFirma>__TMSTFIRMA_PLACEHOLDER__</TmstFirma>', `<TmstFirma>${this.tmstFirma}</TmstFirma>`);
+
+    // El SII rechaza con RSC ("CHR-00002: Line too long (4090)") todo XML que tenga una línea de
+    // más de ~4090 caracteres. Sin saltos, el DTE completo va en UNA sola línea y una boleta de
+    // 6 o 7 líneas de detalle ya la supera; el SII permite hasta 60. Se separan en su propia línea
+    // el encabezado, cada detalle, cada descuento/recargo global, cada referencia y el timbre.
+    // Se hace ANTES de canonicalizar y firmar: los saltos quedan dentro del <Documento> y el
+    // digest los cubre, igual que el SII al validar. Entre elementos de un contenido complejo el
+    // espacio en blanco no es significativo para el esquema.
+    dteXml = dteXml.replace(SALTO_ENTRE_ELEMENTOS, '</$1>\n<');
 
     return dteXml;
   }
