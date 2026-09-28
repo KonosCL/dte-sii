@@ -8,6 +8,18 @@ Versionado [SemVer](https://semver.org/lang/es/).
 <!-- Los PRs agregan aca, sin elegir numero de version. Al publicar, esta seccion
      pasa a ser una version numerada con su fecha. Ver CONTRIBUTING.md. -->
 
+## [2.31.0] - 2026-09-28
+
+### Agregado
+
+- **`SiiCertificacion.waitForApproval` incluye `avanceTexto`: el texto legible de la
+  página de avance del SII cuando rechaza uno o más sets.** `estado.estado` es solo la
+  etiqueta corta que matchea `ESTADO_PATTERNS` (p. ej. `ENVIO CON ERRORES O REPAROS`); el
+  HTML crudo de la página (`rawHtml`, ya disponible internamente) puede traer más
+  contexto alrededor de esa etiqueta y se descartaba por completo. Nuevo
+  `utils/html-texto.js` (extraído de `CafSolicitor.textoVisible`, que ahora delega ahí)
+  para que otros módulos lo usen sin depender de una clase que no tiene nada que ver.
+
 ## [2.30.0] - 2026-09-28
 
 ### Agregado

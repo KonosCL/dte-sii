@@ -18,6 +18,7 @@
 const SiiSession = require('./SiiSession.js');
 const { STEPS, emitProgress } = require('./utils/progress');
 const { resolveArtifactDir } = require('./utils/paths');
+const { textoVisible } = require('./utils/html-texto');
 
 /** Decodifica entidades HTML latinas (el portal SII las usa en vez de UTF-8 crudo) y limpia
  * tags/whitespace, para poder aplicar regex de texto sobre las respuestas de forma confiable. */
@@ -1619,10 +1620,19 @@ class SiiCertificacion {
           .filter(e => e.esRechazado || e.datoInconsistente)
           .map(e => `${e.nombre}: ${e.estado}`)
           .join('; ');
+        // `estado[key].estado` es solo la etiqueta corta que matchea el regex de
+        // ESTADO_PATTERNS (p. ej. "ENVIO CON ERRORES O REPAROS") — el HTML crudo
+        // de la página de avance puede traer más contexto del SII alrededor de
+        // esa etiqueta, y hasta ahora se descartaba por completo. Se incluye el
+        // texto legible de TODA la página (no solo del set rechazado, porque el
+        // regex no aísla dónde empieza/termina cada bloque) para que el llamador
+        // lo persista — sin esto, el detalle real del SII se perdía apenas el
+        // proceso terminaba (o el pod se reiniciaba), y solo quedaba la etiqueta.
         return {
           success: false,
           error: detalle || 'el SII rechazó uno o más sets',
           estados: estadosRelevantes,
+          avanceTexto: textoVisible(result.rawHtml, 6000),
         };
       }
     }

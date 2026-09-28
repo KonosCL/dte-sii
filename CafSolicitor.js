@@ -367,16 +367,7 @@ class CafSolicitor {
    * en el HTML —que en producción no se guarda— y el operador ve `UNKNOWN` sin más.
    */
   static textoVisible(html, max = 400) {
-    return String(html || '')
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/gi, ' ').replace(/&aacute;/gi, 'a').replace(/&eacute;/gi, 'e')
-      .replace(/&iacute;/gi, 'i').replace(/&oacute;/gi, 'o').replace(/&uacute;/gi, 'u')
-      .replace(/&ntilde;/gi, 'n').replace(/&[a-z]+;/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, max);
+    return require('./utils/html-texto').textoVisible(html, max);
   }
 
   static esUsuarioSinPermiso(html) {
