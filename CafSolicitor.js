@@ -385,6 +385,21 @@ class CafSolicitor {
   }
 
   /**
+   * ¿El <SELECT name=COD_DOCTO> de of_solicita_folios_dcto ofrece `tipoDte` como
+   * opción? El SII arma este selector solo con los tipos habilitados para timbraje
+   * con este RUT; si ninguno lo está, entrega un único <option value="-1">SIN
+   * DOCUMENTOS</option>. Enviar COD_DOCTO de un tipo que el propio selector no
+   * ofrecía termina en un rechazo genérico del SII más adelante (ST-RS-DTE-15-1),
+   * indistinguible de un timeout — hay que cortar acá, con el motivo real.
+   */
+  static _selectOfreceTipo(html, tipoDte) {
+    const selectMatch = /<select[^>]*name\s*=\s*COD_DOCTO[^>]*>([\s\S]*?)<\/select>/i.exec(html);
+    if (!selectMatch) return true; // sin <select> que inspeccionar, no bloquear por esto
+    const options = [...selectMatch[1].matchAll(/<option[^>]*value\s*=\s*["']?(-?\d+)["']?/gi)];
+    return options.some((m) => m[1] === String(tipoDte));
+  }
+
+  /**
    * Solicita un CAF al SII
    * @param {Object} params - Parámetros
    * @param {number} params.tipoDte - Tipo de DTE (33, 34, 39, 56, 61, etc.)
@@ -873,6 +888,27 @@ class CafSolicitor {
 
       // Selección de tipo de documento
       if (currentHtml.includes('COD_DOCTO')) {
+        // El <SELECT name=COD_DOCTO> puede llegar con un solo <option value="-1">
+        // SIN DOCUMENTOS</option>: el RUT no tiene NINGÚN tipo habilitado para
+        // timbraje todavía (la certificación no terminó, o el tipo pedido no está
+        // entre los habilitados). Sin este chequeo, el código sigue de largo,
+        // envía COD_DOCTO=tipoDte igual (un value que el <select> ni ofrecía) y el
+        // SII responde con un error genérico (ST-RS-DTE-15-1) más adelante, que
+        // termina cayendo en el mismo camino que un tope real (MAX_AUTOR
+        // insuficiente) — un tope no existe acá, el tipo simplemente no está
+        // habilitado y reintentar no lo arregla nunca. Caso real: RUT 76579006-9,
+        // tipo 39, 2026-09-28.
+        if (!CafSolicitor._selectOfreceTipo(currentHtml, tipoDte)) {
+          return {
+            success: false,
+            errorCode: 'TIPO_NO_HABILITADO_TIMBRAJE',
+            error:
+              `El SII no ofrece el tipo de documento ${tipoDte} para timbraje con este RUT ` +
+              `("SIN DOCUMENTOS" en el selector). La empresa debe completar su certificación ` +
+              `de este tipo de documento, o verificar en el portal del SII que esté habilitada.`,
+          };
+        }
+
         const selectInputs = SiiSession.extractInputValues(currentHtml);
         // NO enviar CANT_DOCTOS aquí — el browser tampoco lo envía en este paso.
         // Si se envía un número, el SII no incluye MAX_AUTOR ni CONTROL="S" en la

@@ -8,6 +8,28 @@ Versionado [SemVer](https://semver.org/lang/es/).
 <!-- Los PRs agregan aca, sin elegir numero de version. Al publicar, esta seccion
      pasa a ser una version numerada con su fecha. Ver CONTRIBUTING.md. -->
 
+## [2.30.0] - 2026-09-28
+
+### Agregado
+
+- **`CafSolicitor._selectOfreceTipo` detecta un tipo de documento no habilitado para timbraje.**
+  El `<SELECT name=COD_DOCTO>` de `of_solicita_folios_dcto` solo ofrece los tipos que el SII tiene
+  habilitados para timbraje con ese RUT; si ninguno lo está, entrega un único
+  `<option value="-1">SIN DOCUMENTOS</option>`. La librería enviaba igual `COD_DOCTO=tipoDte` (un
+  value que el propio selector no ofrecía) y el SII respondía con un rechazo genérico
+  (`ST-RS-DTE-15-1`), indistinguible de un tope real o un timeout. Ahora `solicitar()` corta antes,
+  con `errorCode: 'TIPO_NO_HABILITADO_TIMBRAJE'` y el motivo explícito. Caso real: RUT 76579006-9,
+  tipo 39, 2026-09-28 — certificación de boleta electrónica sin terminar.
+
+### Corregido
+
+- **`FolioService.solicitarCafPorTandas` disfrazaba cualquier motivo de cero folios de
+  `TOPE_SII_INSUFICIENTE`.** Cuando ninguna tanda entregaba folios, el resultado final siempre
+  usaba ese código, aunque el motivo real (p. ej. el nuevo `TIPO_NO_HABILITADO_TIMBRAJE`) no tuviera
+  nada que ver con un tope — un consumidor que interprete `TOPE_SII_INSUFICIENTE` como "hay folios
+  en el aire sin declarar" entra en un reintento que nunca puede tener éxito. Ahora, si no se obtuvo
+  ningún folio y el motivo de la última tanda es distinto de un tope, se propaga tal cual.
+
 ## [2.29.1] - 2026-09-27
 
 ### Corregido

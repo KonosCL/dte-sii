@@ -636,6 +636,11 @@ class FolioService {
     const cafPaths = [];
     let cubiertos = 0;
     let tope = null;
+    // Motivo de la última tanda que no entregó folios — permite distinguir un tope
+    // real (el SII entregó algunos y no más) de un rechazo que no tiene nada que ver
+    // con topes (p. ej. TIPO_NO_HABILITADO_TIMBRAJE) y que un reintento no arregla.
+    let ultimoErrorCode = null;
+    let ultimoError = null;
 
     for (let tanda = 1; tanda <= maxTandas && cubiertos < objetivo; tanda++) {
       tope = (tanda === 1 && topeInicial) ? topeInicial : await this.consultarTope({ tipoDte });
@@ -660,6 +665,8 @@ class FolioService {
       const res = await this.cafSolicitor.solicitar({ tipoDte, cantidad: pedir, minCantidad: 1 });
       const otorgados = res.success ? this._contarFoliosCaf(res.cafPath) : 0;
       if (!otorgados) {
+        ultimoErrorCode = res.errorCode || null;
+        ultimoError = res.error || null;
         console.warn(
           `[FolioService] Tipo ${tipoDte}: tanda ${tanda} no entregó folios ` +
           `(${res.errorCode || 'sin código'}: ${res.error || 'sin detalle'}) — se corta`
@@ -674,6 +681,17 @@ class FolioService {
 
     const base = { maxAutor: tope?.maxAutor ?? null, foliosDisp: tope?.foliosDisp ?? null };
     if (cubiertos < objetivo) {
+      // Cero folios en NINGUNA tanda y el motivo no es un tope (p. ej. el tipo de
+      // documento no está habilitado para timbraje): propagar el código real. Con
+      // TOPE_SII_INSUFICIENTE, quien llama entiende "hay folios en el aire sin
+      // declarar" y reintenta para siempre — acá no hay ningún tope que declarar.
+      if (cubiertos === 0 && ultimoErrorCode && ultimoErrorCode !== 'TOPE_SII_INSUFICIENTE') {
+        return {
+          ok: false, cafPaths, otorgados: cubiertos, ...base,
+          errorCode: ultimoErrorCode,
+          error: ultimoError || `El SII no entregó folios del tipo ${tipoDte} (${ultimoErrorCode}).`,
+        };
+      }
       return {
         ok: false, cafPaths, otorgados: cubiertos, ...base,
         errorCode: 'TOPE_SII_INSUFICIENTE',
