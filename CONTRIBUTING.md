@@ -58,8 +58,11 @@ Escribe bajo `Unreleased` y, si crees que es breaking, dilo con esas palabras.
 
 **Este repositorio es público.** Nunca incluyas RUTs reales, razones sociales
 reales, certificados, CAFs, tokens ni rutas locales, ni en el código, ni en los
-tests, ni en los artefactos que adjuntes. Usa datos inventados con formato válido:
-`76543210-K`, `77111222-3`, `EMPRESA EJEMPLO SPA`. La tabla completa de qué está
+tests, ni en los artefactos que adjuntes. Usa datos inventados con formato válido y
+dígito verificador correcto: `96790240-3`, `77111222-3`, `EMPRESA EJEMPLO SPA` —
+`76543210-K` (citado en ejemplos antiguos del repo) tiene el dígito verificador
+INVÁLIDO; si tu cambio pasa por `validarRut()`, un test con ese RUT falla por una
+razón que no tiene nada que ver con lo que estás probando. La tabla completa de qué está
 prohibido y qué usar en su lugar está en [`CLAUDE.md`](CLAUDE.md). Si adjuntas un
 XML generado, anonimízalo antes.
 

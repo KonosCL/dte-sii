@@ -8,6 +8,29 @@ Versionado [SemVer](https://semver.org/lang/es/).
 <!-- Los PRs agregan aca, sin elegir numero de version. Al publicar, esta seccion
      pasa a ser una version numerada con su fecha. Ver CONTRIBUTING.md. -->
 
+## [2.29.1] - 2026-09-27
+
+### Corregido
+
+- **`TmstFirmaEnv` de la carátula se armaba en UTC, no en hora de Chile.** `EnvioBase._generateTimestamp()`
+  usaba `new Date().toISOString()`, que siempre es UTC sin importar el `TZ` del proceso (a diferencia
+  de `getDate()/getMonth()`, que sí lo consultan). Chile va en UTC-3 o UTC-4 según la época del año
+  (sí tiene cambio de hora estacional), así que el timestamp quedaba varias horas adelantado — como
+  si el documento se hubiera firmado en el futuro. Confirmado con un documento real: `TmstFirmaEnv`
+  coincidía casi al segundo con la hora UTC de emisión, en vez de ir 3-4 horas antes. Nueva utilidad
+  `utils/fecha-chile.js` (`timestampChile()`, con `Intl.DateTimeFormat` — igual criterio que
+  `fechaHoyChile()` del consumidor, nunca un offset fijo hardcodeado porque la regla de DST de Chile
+  cambia). Además, **`EnvioDTE.setCaratula()` ignoraba cualquier `TmstFirmaEnv` que se le pasara**
+  (siempre recalculaba internamente) mientras que `EnvioBOLETA.setCaratula()` sí lo respetaba: ahora
+  ambos lo hacen igual, así que un consumidor puede fijar la hora si lo necesita. Mismo patrón de bug
+  corregido en `ConsumoFolio.js` (RCOF de boletas). Corrección deliberada, no un fix a ciegas: se
+  aisló contra el SII real (maullín) y **se confirmó que este bug NO era la causa de ningún rechazo
+  observado** — una boleta con el timestamp en UTC crudo (a propósito) fue aceptada igual (`EPR`), y
+  una factura con el timestamp corregido pero un campo del receptor mal nombrado (bug aparte, del
+  consumidor) siguió rechazada. Se corrige de todas formas porque es objetivamente incorrecto y podría
+  causar un rechazo en otro escenario. Evidencia: lectura de código, test unitario
+  (`test/envio-tmst-firma-en-chile.test.js`) y consulta/pruebas reales al SII.
+
 ## [2.29.0] - 2026-09-26
 
 ### Corregido
