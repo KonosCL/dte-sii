@@ -49,6 +49,11 @@ Versionado [SemVer](https://semver.org/lang/es/).
   Si el tiempo se agota con sets que la página nunca mostró, el resultado trae `sinEstado`.
 - `CertRunner._cafsDelPlan` exigía CAF para tipos con 0 casos en el plan del set.
 - `MuestrasImpresas.generarMuestras` clasificaba los envíos de exportación como simulación.
+- **Muestra impresa de la factura de compra (46) y sus notas sin el IVA retenido**: mostraba Neto
+  + IVA y un Total igual al neto. Con `ImptoReten` código 15 ahora sigue el formato de cambio de
+  sujeto del manual de muestras del SII: Valor Neto, IVA a retener, Subtotal, "Menos: IVA
+  retenido" y Monto Total. Las muestras de los demás documentos no cambian (comparadas byte a
+  byte contra la versión anterior).
 - `DTE.firmar` lanza si no encuentra dónde insertar la firma, en vez de devolver el documento
   sin ella.
 

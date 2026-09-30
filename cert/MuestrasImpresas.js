@@ -408,17 +408,7 @@ class MuestrasImpresas {
       ? `<div class="traslado"><strong>Tipo de Traslado:</strong> ${doc.indTraslado} - ${NOMBRES_TRASLADO[doc.indTraslado] || ''}</div>`
       : '';
 
-    // Descuentos globales
-    const dctoGlobalHtml = doc.descuentosGlobales.length
-      ? doc.descuentosGlobales.map((dg) => {
-          const esDesc = dg?.TpoMov === 'D';
-          const label = esDesc ? 'Descuento Global' : 'Recargo Global';
-          const valor = dg?.ValorDR ? '$' + formatMonto(dg.ValorDR) : (dg?.PctDR ? dg.PctDR + '%' : '');
-          return `<tr><td>${label}</td><td class="num">${valor}</td></tr>`;
-        }).join('')
-      : '';
-
-    // Totales según tipo de documento
+    // Totales según tipo de documento (los descuentos y recargos globales van en _filasTotalesNacional)
     let totalesHtml = '';
     const esExenta = doc.tipoDte === 34;
     
@@ -428,13 +418,11 @@ class MuestrasImpresas {
         ${totales?.MntTotal ? `<tr><td><strong>Monto Total</strong></td><td class="num"><strong>$${formatMonto(totales.MntTotal)}</strong></td></tr>` : ''}
       `;
     } else {
-      totalesHtml = `
-        ${dctoGlobalHtml}
-        ${totales?.MntNeto ? `<tr><td>Monto Neto</td><td class="num">$${formatMonto(totales.MntNeto)}</td></tr>` : ''}
-        ${totales?.MntExe ? `<tr><td>Monto Exento</td><td class="num">$${formatMonto(totales.MntExe)}</td></tr>` : ''}
-        ${totales?.IVA ? `<tr><td>IVA (${totales?.TasaIVA || 19}%)</td><td class="num">$${formatMonto(totales.IVA)}</td></tr>` : ''}
-        ${totales?.MntTotal ? `<tr><td><strong>Monto Total</strong></td><td class="num"><strong>$${formatMonto(totales.MntTotal)}</strong></td></tr>` : ''}
-      `;
+      totalesHtml = this._filasTotalesNacional(doc)
+        .map(([label, valor, negrita]) => (negrita
+          ? `<tr><td><strong>${label}</strong></td><td class="num"><strong>${valor}</strong></td></tr>`
+          : `<tr><td>${label}</td><td class="num">${valor}</td></tr>`))
+        .join('');
     }
 
     // Acuse de recibo (solo en cedible y tipos que aplican)
@@ -857,13 +845,39 @@ class MuestrasImpresas {
       if (totales.MntExe)   rows++;
       if (totales.MntTotal) rows++;
     } else {
-      rows += (descuentosGlobales || []).length;
-      if (totales.MntNeto)  rows++;
-      if (totales.MntExe)   rows++;
-      if (totales.IVA)      rows++;
-      if (totales.MntTotal) rows++;
+      rows = this._filasTotalesNacional(doc).length;
     }
     return rows * (PDF_LAYOUT.table.rowH + 2) + 8;
+  }
+
+  /**
+   * Filas de totales de un documento nacional afecto: [etiqueta, valor, negrita].
+   *
+   * Con IVA retenido total (ImptoReten código 15, la factura de compra del set "COMPRA CON
+   * RETENCION TOTAL DEL IVA"), el manual de muestras impresas del SII pide el formato de cambio
+   * de sujeto: Valor neto, IVA a retener, subtotal, "Menos: IVA retenido" y Total. Sin esas filas
+   * la muestra mostraba Neto + IVA con un Total igual al neto, sin explicar la diferencia.
+   */
+  _filasTotalesNacional(doc) {
+    const { totales = {}, descuentosGlobales = [] } = doc;
+    const rows = [];
+    for (const dg of (descuentosGlobales || [])) {
+      const label = dg && dg.TpoMov === 'D' ? 'Descuento Global' : 'Recargo Global';
+      const valor = dg && dg.ValorDR ? `$${formatMonto(dg.ValorDR)}` : (dg && dg.PctDR ? `${dg.PctDR}%` : '');
+      rows.push([label, valor, false]);
+    }
+    const tasa = totales.TasaIVA || 19;
+    const retenido = toArray(totales.ImptoReten).filter((r) => Number(r?.TipoImp) === 15 && Number(r?.MontoImp) > 0);
+    if (totales.MntNeto)  rows.push([retenido.length ? 'Valor Neto' : 'Monto Neto', `$${formatMonto(totales.MntNeto)}`, false]);
+    if (totales.MntExe)   rows.push(['Monto Exento', `$${formatMonto(totales.MntExe)}`, false]);
+    if (totales.IVA)      rows.push([retenido.length ? `IVA a retener (${tasa}%)` : `IVA (${tasa}%)`, `$${formatMonto(totales.IVA)}`, false]);
+    if (retenido.length) {
+      const subtotal = Number(totales.MntNeto || 0) + Number(totales.MntExe || 0) + Number(totales.IVA || 0);
+      rows.push(['Subtotal', `$${formatMonto(subtotal)}`, false]);
+      for (const r of retenido) rows.push([`Menos: IVA retenido (${r.TasaImp || tasa}%)`, `$${formatMonto(r.MontoImp)}`, false]);
+    }
+    if (totales.MntTotal) rows.push(['Monto Total', `$${formatMonto(totales.MntTotal)}`, true]);
+    return rows;
   }
 
   _pdfCalcAcuseHeight(leyendaLines) {
@@ -1216,15 +1230,7 @@ class MuestrasImpresas {
       if (totales.MntExe)   rows.push(['Monto Exento',  `$${formatMonto(totales.MntExe)}`,  false]);
       if (totales.MntTotal) rows.push(['Monto Total',   `$${formatMonto(totales.MntTotal)}`, true]);
     } else {
-      for (const dg of (descuentosGlobales || [])) {
-        const label = dg && dg.TpoMov === 'D' ? 'Descuento Global' : 'Recargo Global';
-        const valor = dg && dg.ValorDR ? `$${formatMonto(dg.ValorDR)}` : (dg && dg.PctDR ? `${dg.PctDR}%` : '');
-        rows.push([label, valor, false]);
-      }
-      if (totales.MntNeto)  rows.push(['Monto Neto',                         `$${formatMonto(totales.MntNeto)}`,  false]);
-      if (totales.MntExe)   rows.push(['Monto Exento',                       `$${formatMonto(totales.MntExe)}`,   false]);
-      if (totales.IVA)      rows.push([`IVA (${totales.TasaIVA || 19}%)`,   `$${formatMonto(totales.IVA)}`,      false]);
-      if (totales.MntTotal) rows.push(['Monto Total',                        `$${formatMonto(totales.MntTotal)}`, true]);
+      rows.push(...this._filasTotalesNacional(doc));
     }
 
     let ry      = y + 2;
