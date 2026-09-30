@@ -5,6 +5,8 @@
 Genera, timbra, firma y envía facturas electrónicas, boletas electrónicas, libros contables y automatiza el proceso de certificación ante el SII.
 
 > Desarrollada por [Devlas SpA](https://devlas.cl) · Licencia MIT · Node.js >= 18 · CommonJS
+>
+> [Apoyar el proyecto en GitHub Sponsors](https://github.com/sponsors/devlas-cl) si tu empresa usa esta librería.
 
 ---
 
@@ -40,6 +42,7 @@ npm install @devlas/dte-sii
 - [Ambientes](#ambientes)
 - [Contribuir](#contribuir)
 - [Seguridad](#seguridad)
+- [Apoyar el proyecto](#apoyar-el-proyecto)
 - [Licencia](#licencia)
 
 ---
@@ -1143,6 +1146,15 @@ Si trabajas con un agente de código, el repo trae la skill
 
 Si encuentras un problema de seguridad, **no abras un issue público**. Ver
 [SECURITY.md](SECURITY.md) para el canal privado y el alcance.
+
+## Apoyar el proyecto
+
+La librería es y seguirá siendo MIT, completa y sin funciones reservadas. Mantenerla
+implica seguir los cambios de esquemas y servicios del SII, sostener los tests y
+responder issues. Si tu empresa la usa y quieres ayudar a que siga al día, puedes
+hacerlo en [GitHub Sponsors](https://github.com/sponsors/devlas-cl).
+
+El apoyo es voluntario y no da prioridad sobre otros usuarios en el desarrollo.
 
 ## Licencia
 

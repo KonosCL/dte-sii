@@ -8,6 +8,12 @@ Versionado [SemVer](https://semver.org/lang/es/).
 <!-- Los PRs agregan aca, sin elegir numero de version. Al publicar, esta seccion
      pasa a ser una version numerada con su fecha. Ver CONTRIBUTING.md. -->
 
+### Agregado
+
+- **Enlace de apoyo en GitHub Sponsors.** Nuevo `.github/FUNDING.yml`, campo `funding` en
+  `package.json` (visible con `npm fund` y en la pagina del paquete en npm) y una seccion
+  "Apoyar el proyecto" en el README. La libreria sigue siendo MIT y completa, sin cambios de codigo.
+
 ## [2.31.0] - 2026-09-28
 
 ### Agregado

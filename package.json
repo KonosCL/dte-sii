@@ -7,6 +7,10 @@
   "license": "MIT",
   "author": "Devlas SpA <ti@devlas.cl> (https://devlas.cl)",
   "homepage": "https://github.com/devlas-cl/dte-sii",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/devlas-cl"
+  },
   "scripts": {
     "test": "for f in test/*.test.js; do echo \"\n── $f\"; node \"$f\" || exit 1; done",
     "scan": "node scripts/scan-datos-reales.js",
