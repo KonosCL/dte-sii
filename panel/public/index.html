@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Certificador SII</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f3f5f7; --panel:#ffffff; --ink:#18212b; --muted:#5b6876; --line:#d9dfe5;
+  --accent:#0f5f8c; --accent-ink:#ffffff; --ok:#1d7a46; --warn:#9a6400; --bad:#b3261e;
+  --log-bg:#0f1720; --log-ink:#cfe3f1; --log-dim:#7f93a6;
+  --f-ui:"IBM Plex Sans",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#10161c; --panel:#18212a; --ink:#e3e9ee; --muted:#9aa8b5; --line:#2a3642;
+  --accent:#4fa3d6; --accent-ink:#06121b; --ok:#5cc58a; --warn:#e2b04a; --bad:#f08a80;
+  --log-bg:#070b0f; --log-ink:#cfe3f1; --log-dim:#6f8396; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10161c; --panel:#18212a; --ink:#e3e9ee; --muted:#9aa8b5; --line:#2a3642;
+  --accent:#4fa3d6; --accent-ink:#06121b; --ok:#5cc58a; --warn:#e2b04a; --bad:#f08a80;
+  --log-bg:#070b0f; --log-ink:#cfe3f1; --log-dim:#6f8396; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px}
+h1,h2,h3{margin:0;text-wrap:balance}
+h2{font-size:18px}
+.bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px}
+.brand{font-weight:600;font-size:18px}
+.brand small{display:block;font-weight:400;color:var(--muted);font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px}
+.btn{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:9px 14px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:5px 10px;font-size:13px}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%}
+textarea{font-family:var(--f-mono);font-size:13px;min-height:340px;resize:vertical}
+label{font-size:13px;color:var(--muted);display:grid;gap:4px}
+.muted{color:var(--muted);font-size:13px}
+.err{color:var(--bad);font-size:14px;min-height:1em}
+#login{max-width:380px;margin:60px auto;display:grid;gap:14px}
+.grid{display:grid;grid-template-columns:270px minmax(0,1fr);gap:16px}
+@media (max-width:820px){.grid{grid-template-columns:1fr}}
+.side{display:grid;gap:10px;align-content:start}
+.co{display:grid;gap:2px;text-align:left;width:100%}
+.co.sel{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.co span{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)} .pill.run{color:var(--accent)}
+.main{display:grid;gap:16px;min-width:0}
+.head{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:baseline}
+.steps{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.step{font-size:12px;padding:4px 8px;border-radius:4px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+.step.done{color:var(--ok);border-color:var(--ok)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.tabs .btn{padding:6px 10px;font-size:13px}
+.tabs .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.actions{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.act{display:grid;gap:3px;text-align:left}
+.act small{font-weight:400;color:var(--muted);font-size:12px}
+.act.primary small{color:inherit;opacity:.85}
+.opts{display:flex;flex-wrap:wrap;gap:16px;margin-top:14px;font-size:13px;color:var(--muted)}
+.opts label{display:flex;gap:6px;align-items:center}
+.opts input{width:auto}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.row > *{flex:1 1 180px}
+.logbar{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;margin-bottom:10px}
+.log{background:var(--log-bg);color:var(--log-ink);font-family:var(--f-mono);font-size:12.5px;line-height:1.55;border-radius:8px;padding:14px;height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.log .dim{color:var(--log-dim)}
+.log .aviso{display:block;border-left:3px solid var(--warn);padding:4px 10px;margin:6px 0;background:rgba(255,255,255,.04)}
+.log .aviso.error{border-color:var(--bad)} .log .aviso.info{border-color:var(--accent)}
+.log .aviso b{color:#fff}
+.log .fin{display:block;margin-top:8px;padding:6px 10px;border-radius:6px;background:rgba(255,255,255,.07)}
+.hist{display:grid;gap:6px;margin-top:10px}
+.hist button{display:flex;justify-content:space-between;gap:10px;text-align:left;font-size:13px}
+.lock{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted)}
+.lock b{color:var(--ink)}
+.dls{display:flex;flex-wrap:wrap;gap:8px}
+.dls a{font-size:13px;color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <div class="brand">Certificador SII · Konos<small>Servidor de certificación</small></div>
+    <button class="btn small" id="salir" type="button" hidden>Salir</button>
+  </div>
+
+  <form id="login" class="card" hidden>
+    <h2>Entrar</h2>
+    <label for="pw">Clave del equipo
+      <input id="pw" type="password" autocomplete="current-password" required>
+    </label>
+    <button class="btn primary" type="submit">Entrar</button>
+    <div class="err" id="loginErr" role="alert"></div>
+  </form>
+
+  <div id="app" hidden>
+    <div class="grid">
+      <aside class="side">
+        <button class="btn primary" id="nueva" type="button">+ Nueva empresa</button>
+        <div id="lista" class="side"></div>
+        <div class="card lock">
+          <span aria-hidden="true">🔒</span>
+          <div><b>El certificado vive en el servidor.</b> El .env que se sube no lleva certificado ni clave; si los trae, el panel los descarta.</div>
+        </div>
+      </aside>
+
+      <section class="main">
+        <div class="card" id="vacio">
+          <h2>Elige una empresa o crea una nueva</h2>
+          <p class="muted">Cada empresa es un archivo .env con sus datos. Con él listo, "Certificar" corre todo el proceso y sigue donde quedó cada vez que lo aprietas.</p>
+        </div>
+
+        <div class="card" id="ficha" hidden>
+          <div class="head">
+            <div><h2 id="coNombre"></h2><span class="muted" id="coRut"></span></div>
+            <span id="coEstado"></span>
+          </div>
+          <div class="steps" id="steps"></div>
+        </div>
+
+        <div class="card" id="trabajo" hidden>
+          <div class="tabs" role="tablist">
+            <button class="btn" type="button" data-tab="acciones" aria-pressed="true">Acciones</button>
+            <button class="btn" type="button" data-tab="datos" aria-pressed="false">Datos de la empresa (.env)</button>
+            <button class="btn" type="button" data-tab="archivos" aria-pressed="false">Archivos</button>
+          </div>
+
+          <div id="t-acciones">
+            <div class="actions">
+              <button class="btn act primary" data-cmd="todo" type="button">Certificar<small>Todo el proceso; se detiene si hay que esperar al SII</small></button>
+              <button class="btn act" data-cmd="estado" type="button">Ver estado<small>Dónde va en el portal del SII</small></button>
+              <button class="btn act" data-cmd="datos" type="button">Traer datos del SII<small>Dirección, comuna y fecha de resolución</small></button>
+              <button class="btn act" data-cmd="descargar" data-args="ver" type="button">Ver sets del portal<small>Qué sets ofrece el SII; no descarga nada</small></button>
+              <button class="btn act" data-cmd="descargar" type="button">Bajar set sin enviar<small>Muestra qué se va a emitir; se niega a mitad de certificación</small></button>
+              <button class="btn act" data-cmd="consultar" type="button">Revisar envíos<small>Aceptados o rechazados por el SII</small></button>
+              <button class="btn act" data-cmd="declarar" type="button">Declarar sets<small>Avisa al SII los sets ya enviados</small></button>
+              <button class="btn act" data-cmd="logout" type="button">Cerrar sesión SII<small>Si quedó una sesión abierta</small></button>
+            </div>
+            <div class="row" style="margin-top:14px">
+              <label>Rehacer un set rechazado
+                <select id="rehacerSet">
+                  <option value="basico">Set básico</option>
+                  <option value="guia">Guía de despacho</option>
+                  <option value="exenta">Factura exenta</option>
+                  <option value="compra">Factura de compra</option>
+                  <option value="exportacion1">Exportación (1)</option>
+                  <option value="exportacion2">Exportación (2)</option>
+                  <option value="muestras">Muestras impresas</option>
+                </select>
+              </label>
+              <button class="btn" id="rehacer" type="button" style="flex:0 0 auto">Rehacer</button>
+            </div>
+            <div class="opts">
+              <label><input type="checkbox" id="optRevisar"> Detener antes de subir muestras (para revisarlas)</label>
+              <label><input type="checkbox" id="optForzar"> Forzar descarga del set (reinicia la postulación)</label>
+              <label><input type="checkbox" id="optReiniciar"> Set nuevo aunque el portal tenga avances anteriores</label>
+              <label><input type="checkbox" id="optAprobados"> Dar los sets por aprobados (solo si el portal ya dice aprobado)</label>
+            </div>
+          </div>
+
+          <div id="t-datos" hidden>
+            <p class="muted">Pega el .env, arrástralo encima del cuadro o elige el archivo. <b>CERT_PATH</b> y <b>CERT_PASSWORD</b> no se guardan: el certificado lo pone el servidor.</p>
+            <div class="row" style="margin-bottom:10px">
+              <input type="file" id="archivoEnv" accept=".env,.txt,text/plain">
+              <button class="btn small" id="plantilla" type="button" style="flex:0 0 auto">Usar plantilla</button>
+            </div>
+            <textarea id="envTexto" spellcheck="false" aria-label="Contenido del .env"></textarea>
+            <div class="row" style="margin-top:10px">
+              <div class="err" id="envMsg" role="status"></div>
+              <button class="btn primary" id="guardar" type="button" style="flex:0 0 auto">Guardar</button>
+            </div>
+          </div>
+
+          <div id="t-archivos" hidden>
+            <p class="muted">Lo que el certificador guardó de esta empresa.</p>
+            <div class="dls" id="descargas"></div>
+          </div>
+        </div>
+
+        <div class="card" id="registro" hidden>
+          <div class="logbar">
+            <div><b id="logTitulo">Registro</b> <span id="logEstado"></span></div>
+            <div style="display:flex;gap:8px">
+              <a class="btn small" id="logDescargar" href="#" hidden>Descargar log</a>
+              <button class="btn small danger" id="detener" type="button" hidden>Detener</button>
+            </div>
+          </div>
+          <div class="log" id="log" aria-live="polite"></div>
+          <div class="hist" id="historial"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

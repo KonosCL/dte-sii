@@ -1,0 +1,31 @@
+[Unit]
+Description=Panel web del certificador SII (Konos)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=certificador
+Group=certificador
+WorkingDirectory=/opt/certificador
+# PANEL_CLAVE, CERT_PATH y CERT_PASSWORD: solo root lee este archivo.
+EnvironmentFile=/etc/certificador/panel.env
+Environment=CERTIFICADOR_DIR=/opt/certificador
+Environment=TZ=America/Santiago
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /opt/certificador/panel/server.js
+Restart=on-failure
+RestartSec=5
+# Da tiempo a que una corrida en curso termine su envío al SII y cierre la sesión.
+TimeoutStopSec=60
+
+# Endurecimiento: el servicio solo escribe en /opt/certificador.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/certificador
+ReadOnlyPaths=/etc/certificador
+
+[Install]
+WantedBy=multi-user.target

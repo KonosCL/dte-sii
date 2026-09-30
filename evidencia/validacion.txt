@@ -1,0 +1,27 @@
+Validación offline del set de exportación sintético (datos inventados) — 2026-09-30T11:02:54-03:00
+
+1) Esquema del SII (EnvioDTE_v10.xsd + DTE_v10.xsd, xmllint):
+out/envio-set-exportacion1.xml validates
+out/envio-set-exportacion2.xml validates
+
+2) Firmas (xml-crypto) y timbre (llave pública del CAF):
+dte-110-1.xml #DTE_T110F1: FIRMA OK
+dte-110-1.xml TED: FRMT OK · MNT 2748.25 = MntTotal
+dte-110-2.xml #DTE_T110F2: FIRMA OK
+dte-110-2.xml TED: FRMT OK · MNT 7700 = MntTotal
+dte-110-3.xml #DTE_T110F3: FIRMA OK
+dte-110-3.xml TED: FRMT OK · MNT 8100 = MntTotal
+dte-111-1.xml #DTE_T111F1: FIRMA OK
+dte-111-1.xml TED: FRMT OK · MNT 185.25 = MntTotal
+dte-112-1.xml #DTE_T112F1: FIRMA OK
+dte-112-1.xml TED: FRMT OK · MNT 185.25 = MntTotal
+dte-112-2.xml #DTE_T112F2: FIRMA OK
+dte-112-2.xml TED: FRMT OK · MNT 0 = MntTotal
+envio-set-exportacion1.xml #DTE_T110F1: FIRMA OK
+envio-set-exportacion1.xml #DTE_T110F2: FIRMA OK
+envio-set-exportacion1.xml #DTE_T112F1: FIRMA OK
+envio-set-exportacion1.xml #DTE_T111F1: FIRMA OK
+envio-set-exportacion1.xml #DTE_SetDoc: FIRMA OK
+envio-set-exportacion2.xml #DTE_T110F3: FIRMA OK
+envio-set-exportacion2.xml #DTE_T112F2: FIRMA OK
+envio-set-exportacion2.xml #DTE_SetDoc: FIRMA OK
