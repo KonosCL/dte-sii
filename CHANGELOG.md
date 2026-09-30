@@ -8,6 +8,8 @@ Versionado [SemVer](https://semver.org/lang/es/).
 <!-- Los PRs agregan aca, sin elegir numero de version. Al publicar, esta seccion
      pasa a ser una version numerada con su fecha. Ver CONTRIBUTING.md. -->
 
+## [2.31.1] - 2026-09-30
+
 ### Agregado
 
 - **Enlace de apoyo en GitHub Sponsors.** Nuevo `.github/FUNDING.yml`, campo `funding` en
