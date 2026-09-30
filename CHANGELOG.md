@@ -30,7 +30,7 @@ Versionado [SemVer](https://semver.org/lang/es/).
   `<option value="-1">SIN DOCUMENTOS</option>`. La librería enviaba igual `COD_DOCTO=tipoDte` (un
   value que el propio selector no ofrecía) y el SII respondía con un rechazo genérico
   (`ST-RS-DTE-15-1`), indistinguible de un tope real o un timeout. Ahora `solicitar()` corta antes,
-  con `errorCode: 'TIPO_NO_HABILITADO_TIMBRAJE'` y el motivo explícito. Caso real: RUT 76579006-9,
+  con `errorCode: 'TIPO_NO_HABILITADO_TIMBRAJE'` y el motivo explícito. Caso real de un comercio:
   tipo 39, 2026-09-28 — certificación de boleta electrónica sin terminar.
 
 ### Corregido

@@ -887,7 +887,7 @@ class CafSolicitor {
         // SII responde con un error genérico (ST-RS-DTE-15-1) más adelante, que
         // termina cayendo en el mismo camino que un tope real (MAX_AUTOR
         // insuficiente) — un tope no existe acá, el tipo simplemente no está
-        // habilitado y reintentar no lo arregla nunca. Caso real: RUT 76579006-9,
+        // habilitado y reintentar no lo arregla nunca. Caso real de un comercio:
         // tipo 39, 2026-09-28.
         if (!CafSolicitor._selectOfreceTipo(currentHtml, tipoDte)) {
           return {

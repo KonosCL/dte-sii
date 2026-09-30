@@ -164,7 +164,7 @@ async function main() {
 
   // ── 7. Cero folios por un motivo que no es un tope: propaga el código real ──────
   //
-  // Caso real (2026-09-28, RUT 76579006-9, tipo 39): el SII no ofrece el tipo en el
+  // Caso real (2026-09-28, un comercio, tipo 39): el SII no ofrece el tipo en el
   // selector (TIPO_NO_HABILITADO_TIMBRAJE). Con el TOPE_SII_INSUFICIENTE genérico,
   // dte-service interpretaba "folios en el aire sin declarar" y reintentaba para
   // siempre — acá no hay ningún tope que declarar, el tipo no está habilitado.

@@ -6,7 +6,7 @@ const { CafSolicitor } = require('../index.js');
 
 // Estructura sintética del <SELECT name=COD_DOCTO> de of_solicita_folios_dcto.
 // El patrón real ("SIN DOCUMENTOS", value="-1") se verificó 2026-09-28 contra un
-// caso de producción (RUT 76579006-9, tipo 39), sin copiar HTML literal — ver
+// caso de producción (un comercio, tipo 39), sin copiar HTML literal — ver
 // CLAUDE.md: este repo es público, los fixtures son inventados.
 function paginaSelectorTipos(opciones) {
   const options = opciones
