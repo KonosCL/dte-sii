@@ -1398,6 +1398,19 @@ class CertRunner {
     // estado interno (comportamiento previo, sin cambios para callers existentes).
     const estructuras = options.estructuras || this._estructuras;
 
+    // Libros que corresponden a ESTE set de pruebas. El de guías solo existe si la empresa
+    // pidió certificar guías de despacho: sin eso el portal no lista LIBRO DE GUIAS y
+    // SetParser deja libroGuias en null. Exigirlo igual dejaba la fase en "2/3 libros" para
+    // toda empresa que certifica sin guías (p. ej. solo el set básico). Sin estructuras
+    // (caller que no las pasa) no hay cómo saberlo y se exigen los tres, como antes.
+    const _conLibroGuias = !estructuras || !!estructuras.libroGuias || !!this.resultados?.guia;
+    const _conLibroExentos = !!estructuras?.libroComprasExentos;
+    const _libroAplica = (key) =>
+      key === 'libroGuias' ? _conLibroGuias
+        : key === 'libroComprasExentos' ? _conLibroExentos
+          : true;
+    const _librosBaseNombres = ['LIBRO DE VENTAS', 'LIBRO DE COMPRAS', ...(_conLibroGuias ? ['LIBRO DE GUIAS'] : [])];
+
     // NOTA: Ya NO decrementamos aquí - cada libro decrementa su propio período
     emitProgress(STEPS.BOOKS_START);
     console.log('\n' + '═'.repeat(60));
@@ -1585,7 +1598,9 @@ class CertRunner {
       errores.push(`Libro Ventas: ${e.message}`);
     }
 
-    try {
+    if (!_conLibroGuias) {
+      console.log('\n[--] Libro de Guías: no corresponde (el set de pruebas no trae guías de despacho)');
+    } else try {
       // 3. Libro de Guías (usa SetGuia)
       if (_estaConforme('LIBRO DE GUIAS')) {
         emitProgress(STEPS.BOOK_SKIPPED, { book: 'libroGuias' });
@@ -1631,9 +1646,9 @@ class CertRunner {
       }
     }
 
-    // Contar libros obligatorios (ventas + compras + guías)
+    // Contar libros obligatorios (ventas + compras, y guías si el set las trae)
     // Un libro cuenta como OK si fue enviado exitosamente O si ya era REVISADO CONFORME (omitido)
-    const librosObligatorios = ['libroVentas', 'libroCompras', 'libroGuias'];
+    const librosObligatorios = ['libroVentas', 'libroCompras', 'libroGuias'].filter(_libroAplica);
     const librosEnviados = librosObligatorios.filter(k => {
       if (resultados[k]?.success) return true;
       // Mapeo clave→nombre para consultar _estaConforme
@@ -1641,7 +1656,7 @@ class CertRunner {
       return _estaConforme(nombreMap[k]);
     }).length;
     
-    if (librosEnviados === 3) {
+    if (librosEnviados === librosObligatorios.length) {
       // Mapeo entre nombre SII y clave interna
       const _SII_NOMBRE_A_KEY = {
         'LIBRO DE VENTAS': 'libroVentas',
@@ -1676,6 +1691,7 @@ class CertRunner {
           { key: 'libroComprasExentos', fn: (p, te) => this.ejecutarLibroComprasExentos({ ...options, periodo: p, tipoEnvio: te }) },
         ];
         for (const { key, fn } of _orden) {
+          if (!_libroAplica(key)) continue; // no está en este set de pruebas
           if (resultados[key]?.conforme) continue; // ya conforme en SII
           if (keysAReenviar && !keysAReenviar.has(key)) continue; // filtro por S21
           emitProgress(STEPS.BOOK_SENDING, { book: key });
@@ -1745,8 +1761,8 @@ class CertRunner {
       // S21 = libro enviado al portal, PENDIENTE DE REVISIÓN — estado normal de espera.
       // NO es un error de período. Solo LNC/LRH son errores reales que requieren acción.
       const _esperarAprobacion = async (librosAVerificar) => {
-        const _todosCandidatos = ['LIBRO DE VENTAS', 'LIBRO DE COMPRAS', 'LIBRO DE GUIAS'];
-        if (estructuras?.libroComprasExentos) _todosCandidatos.push('LIBRO DE COMPRAS PARA EXENTOS');
+        const _todosCandidatos = [..._librosBaseNombres];
+        if (_conLibroExentos) _todosCandidatos.push('LIBRO DE COMPRAS PARA EXENTOS');
         const _librosAVerif = librosAVerificar || _todosCandidatos.filter(n => !_estaConforme(n));
         console.log(`\nEsperando aprobacion del SII para: ${_librosAVerif.join(', ')}`);
         let _ss = {};
@@ -1758,7 +1774,7 @@ class CertRunner {
           _ss = _poll.estadoSets || {};
           const _info = Object.entries(_ss).filter(([k]) => k.toUpperCase().includes('LIBRO')).map(([k, v]) => `${k.trim()}: ${v}`);
           if (_info.length) console.log(` [...] Intento ${_i + 1}/40: ${_info.join(' | ')}`);
-          const _librosObs = ['LIBRO DE VENTAS', 'LIBRO DE COMPRAS', 'LIBRO DE GUIAS'];
+          const _librosObs = _librosBaseNombres;
           const _todosObligatoriosOk = _librosObs.every(n => {
             const e = _findEntry(_ss, n);
             return e && (e[1] === 'REVISADO CONFORME' || e[1] === 'S25');
@@ -1950,8 +1966,8 @@ class CertRunner {
           console.log('\n[OK] Libros declarados — esperando revisión del SII...');
 
           // Construir la lista inicial de libros a verificar
-          const _todosLibrosNombres = ['LIBRO DE VENTAS', 'LIBRO DE COMPRAS', 'LIBRO DE GUIAS'];
-          if (estructuras?.libroComprasExentos) _todosLibrosNombres.push('LIBRO DE COMPRAS PARA EXENTOS');
+          const _todosLibrosNombres = [..._librosBaseNombres];
+          if (_conLibroExentos) _todosLibrosNombres.push('LIBRO DE COMPRAS PARA EXENTOS');
           let _librosAVerificar = _todosLibrosNombres.filter(n => !_estaConforme(n));
 
           // Si SOAP detectó LNC/LRH para algún libro → excluirlos de la espera portal.
@@ -2070,16 +2086,17 @@ class CertRunner {
         resultados.declaracion = { success: false, error: e.message };
       }
     } else {
-      console.log(`\n[!] Solo ${librosEnviados}/3 libros enviados. Errores: ${errores.join('; ')}`);
+      console.log(`\n[!] Solo ${librosEnviados}/${librosObligatorios.length} libros enviados. Errores: ${errores.join('; ')}`);
     }
 
     const _librosProcesados = Object.keys(resultados)
       .filter(k => k.startsWith('libro'))
       .map(k => k.slice('libro'.length).replace(/^./, c => c.toLowerCase()));
-    emitProgress(STEPS.BOOKS_DONE, { libros: _librosProcesados, success: librosEnviados === 3 });
+    const _todosEnviados = librosEnviados === librosObligatorios.length;
+    emitProgress(STEPS.BOOKS_DONE, { libros: _librosProcesados, success: _todosEnviados });
 
     return {
-      success: librosEnviados === 3,
+      success: _todosEnviados,
       librosEnviados,
       resultados,
       errores,
