@@ -26,6 +26,13 @@
  *  - `config.exportacion.comisionComo`: 'R' o 'D', cuando la línea de comisiones del set no
  *    dice si es recargo o descuento.
  *
+ * Obligatorio cuando el set trae bultos (el SII lo exige aunque el formato DTE lo muestre como
+ * opcional: reparo HED-2-804 "Campo obligatorio", medido contra el ambiente de certificación):
+ *  - `config.exportacion.marcas`: las marcas de los bultos (texto, o `(caso) => texto`).
+ *  - `config.exportacion.contenedor`: `{ id, sello, emisorSello? }` si el bulto es un
+ *    contenedor (IdContainer y Sello). El set no trae ninguno de los dos.
+ *  - `config.exportacion.folioReferencia`: número de los documentos de Aduana que el set cita.
+ *
  * Ningún campo de `Aduana` es obligatorio en DTE_v10.xsd: que el documento valide no dice que
  * corresponda al caso. Por eso cada traducción de texto a código lanza si no es inequívoca, y
  * `planificar()` deja ver el documento completo antes de gastar folios.
@@ -514,19 +521,17 @@ class SetExportacion extends SetBase {
     if (caso.totalBultos) a.TotBultos = caso.totalBultos;
     if (caso.tipoBulto) {
       const bulto = resolver('tipoBulto', caso.tipoBulto, 'TIPO DE BULTO');
-      a.TipoBultos = [{ CodTpoBultos: bulto.codigo, ...(caso.totalBultos ? { CantBultos: caso.totalBultos } : {}) }];
+      const tipoBulto = {
+        CodTpoBultos: bulto.codigo,
+        ...(caso.totalBultos ? { CantBultos: caso.totalBultos } : {}),
+        // HED-2-804 "Campo obligatorio: Marcas": el SII lo exige en cada tipo de bulto.
+        Marcas: this._marcas(caso),
+      };
       if (BULTOS_CONTENEDOR.includes(bulto.codigo)) {
-        const cont = this.config.exportacion?.contenedor;
-        if (cont?.id) {
-          Object.assign(a.TipoBultos[0], {
-            IdContainer: cont.id,
-            ...(cont.sello ? { Sello: cont.sello } : {}),
-            ...(cont.emisorSello ? { EmisorSello: cont.emisorSello } : {}),
-          });
-        } else {
-          avisos.push(`bulto ${bulto.glosa}: el set no trae número de contenedor ni sello (IdContainer, Sello)`);
-        }
+        // HED-2-804 "Campo obligatorio: Id. Container" y "Sello" cuando el bulto es contenedor.
+        Object.assign(tipoBulto, this._contenedor(caso, bulto));
       }
+      a.TipoBultos = [tipoBulto];
     }
     if (caso.flete > 0) a.MntFlete = caso.flete;
     if (caso.seguro > 0) a.MntSeguro = caso.seguro;
@@ -537,6 +542,34 @@ class SetExportacion extends SetBase {
 
     if (!Object.keys(a).length) return null;
     return buildTransporteExportacion({ Aduana: a });
+  }
+
+  /** Marcas de los bultos, de la configuración (el set no las trae y el SII las exige). */
+  _marcas(caso) {
+    const m = this.config.exportacion?.marcas;
+    const v = String((typeof m === 'function' ? m(caso) : m) ?? '').trim();
+    if (!v) {
+      throw new Error(`Caso ${caso.id}: el SII exige Marcas en los bultos (reparo HED-2-804) y el set no las trae. ` +
+        'Indícalas en config.exportacion.marcas.');
+    }
+    if (v.length > 255) throw new Error(`Caso ${caso.id}: Marcas tiene ${v.length} caracteres; el SII admite 255`);
+    return v;
+  }
+
+  /** IdContainer, Sello y EmisorSello de la configuración, para un bulto contenedor. */
+  _contenedor(caso, bulto) {
+    const c = this.config.exportacion?.contenedor;
+    const id = String(c?.id ?? '').trim();
+    const sello = String(c?.sello ?? '').trim();
+    if (!id || !sello) {
+      throw new Error(`Caso ${caso.id}: el bulto ${bulto.glosa} es un contenedor y el SII exige Id. Container y Sello ` +
+        '(reparo HED-2-804); el set no los trae. Indícalos en config.exportacion.contenedor = { id, sello }.');
+    }
+    if (id.length > 25) throw new Error(`Caso ${caso.id}: IdContainer tiene ${id.length} caracteres; el SII admite 25`);
+    if (sello.length > 20) throw new Error(`Caso ${caso.id}: Sello tiene ${sello.length} caracteres; el SII admite 20`);
+    const emisor = String(c?.emisorSello ?? '').trim();
+    if (emisor.length > 70) throw new Error(`Caso ${caso.id}: EmisorSello tiene ${emisor.length} caracteres; el SII admite 70`);
+    return { IdContainer: id, Sello: sello, ...(emisor ? { EmisorSello: emisor } : {}) };
   }
 
   /** Fecha de emisión en Chile, igual para todo el set (una nota no puede quedar antes que su factura). */

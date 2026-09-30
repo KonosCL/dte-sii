@@ -49,6 +49,12 @@ Versionado [SemVer](https://semver.org/lang/es/).
   Si el tiempo se agota con sets que la página nunca mostró, el resultado trae `sinEstado`.
 - `CertRunner._cafsDelPlan` exigía CAF para tipos con 0 casos en el plan del set.
 - `MuestrasImpresas.generarMuestras` clasificaba los envíos de exportación como simulación.
+- **Exportación: el SII reparaba los bultos sin Marcas y los contenedores sin Id. Container ni
+  Sello** (reparo HED-2-804 "Campo obligatorio", medido en el ambiente de certificación el
+  30-09-2026, aunque el formato DTE los muestre como opcionales). Cada `TipoBultos` lleva
+  `Marcas` de `config.exportacion.marcas`, y un bulto contenedor lleva `IdContainer` y `Sello` de
+  `config.exportacion.contenedor`. Sin esos datos, `SetExportacion` lanza antes de emitir
+  (cambio de contrato: antes emitía con un aviso).
 - **Muestra impresa de la factura de compra (46) y sus notas sin el IVA retenido**: mostraba Neto
   + IVA y un Total igual al neto. Con `ImptoReten` código 15 ahora sigue el formato de cambio de
   sujeto del manual de muestras del SII: Valor Neto, IVA a retener, Subtotal, "Menos: IVA

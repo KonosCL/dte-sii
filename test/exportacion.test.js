@@ -164,7 +164,10 @@ function cafDePrueba(tipo) {
   return file;
 }
 
-function crearSet(key, certificado, exportacion = { tiposCambio: TIPOS_CAMBIO }) {
+// Marcas y contenedor: el set no los trae y el SII los exige (reparo HED-2-804).
+const BULTOS = { marcas: 'SIN MARCAS', contenedor: { id: 'TSTU1234568', sello: '123456-0' } };
+
+function crearSet(key, certificado, exportacion = { tiposCambio: TIPOS_CAMBIO, ...BULTOS }) {
   return new SetExportacion({
     key,
     config: { emisor: EMISOR, certificado, ambiente: 'certificacion', receptorExtranjero: RECEPTOR_EXTRANJERO, exportacion },
@@ -227,14 +230,16 @@ test('plan: totales en la moneda del set, OtraMoneda en pesos y Aduana con los c
   assert.equal(f1.Receptor.CmnaRecep, undefined);
   assert.deepEqual(f1.Transporte.Aduana, {
     CodModVenta: 1, CodClauVenta: 5, TotClauVenta: 2748.25, CodViaTransp: 1, CodPtoEmbarque: 906, CodPtoDesemb: 262,
-    TotBultos: 1, TipoBultos: [{ CodTpoBultos: 75, CantBultos: 1 }], CodPaisRecep: 224, CodPaisDestin: 224,
+    TotBultos: 1, TipoBultos: [{ CodTpoBultos: 75, CantBultos: 1, Marcas: 'SIN MARCAS', IdContainer: 'TSTU1234568', Sello: '123456-0' }],
+    CodPaisRecep: 224, CodPaisDestin: 224,
   });
   assert.deepEqual(Object.keys(f1.Transporte.Aduana), [
     'CodModVenta', 'CodClauVenta', 'TotClauVenta', 'CodViaTransp', 'CodPtoEmbarque', 'CodPtoDesemb',
     'TotBultos', 'TipoBultos', 'CodPaisRecep', 'CodPaisDestin',
   ], 'orden del XSD');
   assert.equal(f1.IdDoc.FmaPagExp, 1);
-  assert.ok(plan[0].avisos.some((a) => /contenedor/i.test(a)), 'avisa que el set no trae número de contenedor');
+  assert.equal(plan[1].datos.Encabezado.Transporte.Aduana.TipoBultos[0].Marcas, 'SIN MARCAS', 'bulto que no es contenedor: con marcas');
+  assert.equal(plan[1].datos.Encabezado.Transporte.Aduana.TipoBultos[0].IdContainer, undefined);
 
   // Anticipo obliga FchCancel; la comisión va como recargo global exento.
   const f2 = plan[1];
@@ -499,7 +504,7 @@ const SET_REAL = [
   "--------------------------------------------------------------------------------",
 ].join("\n");
 const estReal = SetParser.generarEstructurasParaScripts(SetParser.extraerCasosDelSet(SET_REAL));
-const EXPO_REAL = { tiposCambio: { "DOLAR USA": 945.12, "LIBRA EST": 1250.5 }, folioReferencia: "1" };
+const EXPO_REAL = { tiposCambio: { "DOLAR USA": 945.12, "LIBRA EST": 1250.5 }, folioReferencia: "1", ...BULTOS };
 
 test("formato real: parser sin líneas perdidas, VALOR LINEA, referencias, unidades y nacionalidad", () => {
   const [a1, a2] = [estReal.setExportacion1.casos, estReal.setExportacion2.casos];
@@ -538,6 +543,15 @@ test("formato real: flete y seguro como recargos, servicios e IndServicio, líne
   assert.equal(s3.Encabezado.Receptor.Extranjero.Nacionalidad, 331);
   assert.equal(s3.Encabezado.Transporte, undefined);
 
-  assert.throws(() => crearSet("exportacion2", CERT, { tiposCambio: EXPO_REAL.tiposCambio }).planificar(estReal.setExportacion2),
+  assert.throws(() => crearSet("exportacion2", CERT, { tiposCambio: EXPO_REAL.tiposCambio, ...BULTOS }).planificar(estReal.setExportacion2),
     /folioReferencia/, "el número del documento de Aduana no se inventa");
+});
+
+test('bultos: sin marcas o sin datos del contenedor no se emite (el SII lo repara: HED-2-804)', () => {
+  const sinMarcas = { tiposCambio: TIPOS_CAMBIO, contenedor: BULTOS.contenedor };
+  assert.throws(() => crearSet('exportacion1', CERT, sinMarcas).planificar(estructuras.setExportacion1), /Marcas.*HED-2-804/);
+  const sinContenedor = { tiposCambio: TIPOS_CAMBIO, marcas: 'SIN MARCAS' };
+  assert.throws(() => crearSet('exportacion1', CERT, sinContenedor).planificar(estructuras.setExportacion1), /Id\. Container y Sello/);
+  const selloLargo = { tiposCambio: TIPOS_CAMBIO, marcas: 'SIN MARCAS', contenedor: { id: 'TSTU1234568', sello: 'X'.repeat(21) } };
+  assert.throws(() => crearSet('exportacion1', CERT, selloLargo).planificar(estructuras.setExportacion1), /Sello tiene 21/);
 });
