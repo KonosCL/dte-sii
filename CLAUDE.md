@@ -233,3 +233,40 @@ persistencia si el proceso corre en un filesystem efímero.
 1. Montar un volumen/disco persistente en la plataforma de hosting que corresponda.
 2. Apuntar `DATADIR` (y `SII_SESSION_PATH` si se usa) a una ruta dentro de ese volumen.
 3. Confirmar que el volumen sobrevive redeploys, no solo restarts.
+
+## Bug corregido en 2.29.1: `TmstFirmaEnv` iba en UTC, no en hora de Chile
+
+Confirmado consultando al SII real (Devlas, 27/09/2026): **`EnvioDTE`/`EnvioBOLETA`
+(`Envio.js`, `EnvioBase._generateTimestamp()`) generan `TmstFirmaEnv` con
+`new Date().toISOString()`, que siempre es UTC.** A diferencia del bug de `TZ=America/Santiago`
+de la sección anterior (que se arregla configurando la variable de entorno del proceso),
+**`.toISOString()` nunca consulta el timezone del proceso — devuelve UTC pase lo que pase**, así
+que `TZ=America/Santiago` NO arregla esto. Chile no está en UTC (va en UTC-3 o UTC-4 según la época del año — sí tiene cambio de hora
+estacional), así que todo `TmstFirmaEnv` generado así queda ~3 horas adelantado respecto a la hora
+real de Chile, como si el documento se hubiera firmado en el futuro.
+
+Se vio en la práctica: **el 100% de las facturas de suscripción de un consumidor real (Devlas)
+fueron rechazadas por el SII con `RCT` — "Rechazado por Error en Carátula"**, con el `TmstFirmaEnv`
+coincidiendo casi al segundo con la hora UTC de emisión (debería haber estado ~3h antes). Mismo
+patrón de bug, mismo archivo, en `ConsumoFolio.js:75-77` (`now.toISOString().slice(0, 19)`).
+
+**Corrección posterior (28/09/2026): este bug NO era la causa del `RCT` observado.** Se probó de
+forma aislada contra el SII real (maullín): una boleta con el timestamp en UTC crudo (el bug intacto,
+a propósito) fue **aceptada** igual (`EPR`), y una factura con el timestamp ya corregido pero sin el
+campo `CmnaRecep` del receptor siguió **rechazada** (`RCT`). La causa real de ese caso era un campo
+del receptor mal nombrado en el código del consumidor (`CmnaNacimiento` en vez de `CmnaRecep`,
+detalle en `devlas-cloud-api-node/docs/DOCUMENTOS_DEVLAS_RECHAZADOS_SII_2026-09.md`). El bug de
+timestamp sigue siendo real y se corrigió igual — es objetivamente incorrecto y podría causar un
+rechazo en otro escenario — pero no asumir que explica un `RCT` sin aislarlo aparte.
+
+Agrava esto que **`EnvioDTE.setCaratula()` ignora cualquier `TmstFirmaEnv` que le pase el
+llamador** (`Envio.js:159`, llama a `this._generateTimestamp()` sin mirar el parámetro) —
+`EnvioBOLETA.setCaratula()` sí respeta `caratula.TmstFirmaEnv` si se lo pasan (`Envio.js:117`).
+Un consumidor no puede evitar el bug pasando la hora correcta a mano en `EnvioDTE`; solo se
+arregla en la librería.
+
+**Fix aplicado en 2.29.1** (`utils/fecha-chile.js`, `timestampChile()`): calcular `TmstFirmaEnv` en hora de Chile (mismo criterio que
+`fechaHoyChile()`/`horaAhoraChile()` de `devlas-cloud-api-node/src/utils/fecha-chile.ts`, con
+`Intl.DateTimeFormat({ timeZone: 'America/Santiago' })`, nunca `.toISOString()` crudo), y que
+`EnvioDTE.setCaratula()` respete un `TmstFirmaEnv` explícito igual que ya hace `EnvioBOLETA`.
+Detalle completo del caso real: `devlas-cloud-api-node/docs/DOCUMENTOS_DEVLAS_RECHAZADOS_SII_2026-09.md`.

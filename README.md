@@ -5,6 +5,8 @@
 Genera, timbra, firma y envía facturas electrónicas, boletas electrónicas, libros contables y automatiza el proceso de certificación ante el SII.
 
 > Desarrollada por [Devlas SpA](https://devlas.cl) · Licencia MIT · Node.js >= 18 · CommonJS
+>
+> [Apoyar el proyecto en GitHub Sponsors](https://github.com/sponsors/devlas-cl) si tu empresa usa esta librería.
 
 ---
 
@@ -40,6 +42,7 @@ npm install @devlas/dte-sii
 - [Ambientes](#ambientes)
 - [Contribuir](#contribuir)
 - [Seguridad](#seguridad)
+- [Apoyar el proyecto](#apoyar-el-proyecto)
 - [Licencia](#licencia)
 
 ---
@@ -594,6 +597,33 @@ SiiPortalAuth.limpiarSesionCache()           // borra todas
 > ⚠️ **En un servidor, apunta `DATADIR` a un volumen persistente.** Sin eso el caché vive en el
 > filesystem del contenedor y se pierde en cada redeploy, forzando un re-login de toda la base.
 
+#### Varias réplicas: sesión y estado compartidos
+
+Con un solo proceso basta el archivo y el mutex de siempre. Con varias réplicas hay que compartir
+dos cosas, y cada una tiene su puerto (ver `SiiSessionPorts.js`):
+
+| Puerto | Qué guarda | Adaptadores incluidos |
+|---|---|---|
+| `SessionStore` y `SessionLock` | La sesión del portal por certificado y quién la usa ahora | `MemorySessionStore`, `MemorySessionLock` y, por defecto, archivo y mutex en el proceso |
+| `StateStore` | Folios anulados, período de libros, totales LTC y folios usados en certificación | `MemoryStateStore`, `FileStateStore` (por defecto, en `stateDir`) |
+
+```javascript
+SiiPortalAuth.configurarSesion({ store, lock, estado })  // los tres son opcionales
+SiiPortalAuth.restablecerSesion()                        // vuelve a archivo y mutex en proceso
+```
+
+Con un `SessionStore` configurado, `SiiSession` (y con ella `FolioService`, `CafSolicitor` y
+`SiiCertificacion`) toma el lock del certificado, **reutiliza la sesión guardada en vez de
+autenticarse otra vez** y la guarda al terminar. `SiiSession` y `SiiPortalAuth` identifican el
+certificado con la misma huella, así que hay **una sola sesión por certificado**. No hace falta
+`sessionPath`.
+
+`StateStore` es un almacén de documentos JSON por clave (`load`, `save`, `remove`). Un consumidor
+que no configure nada sigue leyendo y escribiendo los mismos archivos de antes.
+
+> `FolioRegistry` (el control local de folios de `FolioService.getNextFolio`) sigue en archivo: su
+> API es síncrona. Un servicio que lleve ese control en su propia base no lo usa.
+
 #### Reintento ante fallas de red/TLS
 
 `autenticar()` reintenta 3 veces con espera progresiva (1s, 2s, 4s) ante errores de transporte.
@@ -1116,6 +1146,15 @@ Si trabajas con un agente de código, el repo trae la skill
 
 Si encuentras un problema de seguridad, **no abras un issue público**. Ver
 [SECURITY.md](SECURITY.md) para el canal privado y el alcance.
+
+## Apoyar el proyecto
+
+La librería es y seguirá siendo MIT, completa y sin funciones reservadas. Mantenerla
+implica seguir los cambios de esquemas y servicios del SII, sostener los tests y
+responder issues. Si tu empresa la usa y quieres ayudar a que siga al día, puedes
+hacerlo en [GitHub Sponsors](https://github.com/sponsors/devlas-cl).
+
+El apoyo es voluntario y no da prioridad sobre otros usuarios en el desarrollo.
 
 ## Licencia
 

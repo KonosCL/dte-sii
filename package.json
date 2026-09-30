@@ -1,12 +1,16 @@
 {
   "name": "@devlas/dte-sii",
-  "version": "2.25.0",
+  "version": "2.31.1",
   "description": "Facturación y boletas electrónicas para el SII de Chile. Genera, timbra, firma y envía DTEs, libros electrónicos y automatiza la certificación.",
   "main": "index.js",
   "types": "dte-sii.d.ts",
   "license": "MIT",
   "author": "Devlas SpA <ti@devlas.cl> (https://devlas.cl)",
   "homepage": "https://github.com/devlas-cl/dte-sii",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/devlas-cl"
+  },
   "scripts": {
     "test": "for f in test/*.test.js; do echo \"\n── $f\"; node \"$f\" || exit 1; done",
     "scan": "node scripts/scan-datos-reales.js",

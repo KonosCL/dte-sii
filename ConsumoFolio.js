@@ -9,6 +9,7 @@
 
 const crypto = require('crypto');
 const { DOMParser } = require('@xmldom/xmldom');
+const { timestampChile } = require('./utils/fecha-chile');
 
 class ConsumoFolio {
   constructor(certificado) {
@@ -71,10 +72,10 @@ class ConsumoFolio {
     }
     this.caratula.FchInicio = this.caratula.FchInicio || this.getFechaEmisionInicial();
     this.caratula.FchFinal = this.caratula.FchFinal || this.getFechaEmisionFinal();
-    // Generar TmstFirmaEnv si no viene (formato ISO 8601: YYYY-MM-DDTHH:MM:SS)
+    // Generar TmstFirmaEnv si no viene, en hora de Chile — `new Date().toISOString()` siempre es
+    // UTC (ver utils/fecha-chile.js, "Bug conocido" en CLAUDE.md) y dejaba la marca ~3h adelantada.
     if (!this.caratula.TmstFirmaEnv) {
-      const now = new Date();
-      this.caratula.TmstFirmaEnv = now.toISOString().slice(0, 19);
+      this.caratula.TmstFirmaEnv = timestampChile();
     }
     this.id = `RCOF_${(caratula.RutEmisor || '').replace('-', '')}_${Date.now()}`;
   }

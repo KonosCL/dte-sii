@@ -8,6 +8,174 @@ Versionado [SemVer](https://semver.org/lang/es/).
 <!-- Los PRs agregan aca, sin elegir numero de version. Al publicar, esta seccion
      pasa a ser una version numerada con su fecha. Ver CONTRIBUTING.md. -->
 
+## [2.31.1] - 2026-09-30
+
+### Agregado
+
+- **Enlace de apoyo en GitHub Sponsors.** Nuevo `.github/FUNDING.yml`, campo `funding` en
+  `package.json` (visible con `npm fund` y en la pagina del paquete en npm) y una seccion
+  "Apoyar el proyecto" en el README. La libreria sigue siendo MIT y completa, sin cambios de codigo.
+
+## [2.31.0] - 2026-09-28
+
+### Agregado
+
+- **`SiiCertificacion.waitForApproval` incluye `avanceTexto`: el texto legible de la
+  página de avance del SII cuando rechaza uno o más sets.** `estado.estado` es solo la
+  etiqueta corta que matchea `ESTADO_PATTERNS` (p. ej. `ENVIO CON ERRORES O REPAROS`); el
+  HTML crudo de la página (`rawHtml`, ya disponible internamente) puede traer más
+  contexto alrededor de esa etiqueta y se descartaba por completo. Nuevo
+  `utils/html-texto.js` (extraído de `CafSolicitor.textoVisible`, que ahora delega ahí)
+  para que otros módulos lo usen sin depender de una clase que no tiene nada que ver.
+
+## [2.30.0] - 2026-09-28
+
+### Agregado
+
+- **`CafSolicitor._selectOfreceTipo` detecta un tipo de documento no habilitado para timbraje.**
+  El `<SELECT name=COD_DOCTO>` de `of_solicita_folios_dcto` solo ofrece los tipos que el SII tiene
+  habilitados para timbraje con ese RUT; si ninguno lo está, entrega un único
+  `<option value="-1">SIN DOCUMENTOS</option>`. La librería enviaba igual `COD_DOCTO=tipoDte` (un
+  value que el propio selector no ofrecía) y el SII respondía con un rechazo genérico
+  (`ST-RS-DTE-15-1`), indistinguible de un tope real o un timeout. Ahora `solicitar()` corta antes,
+  con `errorCode: 'TIPO_NO_HABILITADO_TIMBRAJE'` y el motivo explícito. Caso real de un comercio:
+  tipo 39, 2026-09-28 — certificación de boleta electrónica sin terminar.
+
+### Corregido
+
+- **`FolioService.solicitarCafPorTandas` disfrazaba cualquier motivo de cero folios de
+  `TOPE_SII_INSUFICIENTE`.** Cuando ninguna tanda entregaba folios, el resultado final siempre
+  usaba ese código, aunque el motivo real (p. ej. el nuevo `TIPO_NO_HABILITADO_TIMBRAJE`) no tuviera
+  nada que ver con un tope — un consumidor que interprete `TOPE_SII_INSUFICIENTE` como "hay folios
+  en el aire sin declarar" entra en un reintento que nunca puede tener éxito. Ahora, si no se obtuvo
+  ningún folio y el motivo de la última tanda es distinto de un tope, se propaga tal cual.
+
+## [2.29.1] - 2026-09-27
+
+### Corregido
+
+- **`TmstFirmaEnv` de la carátula se armaba en UTC, no en hora de Chile.** `EnvioBase._generateTimestamp()`
+  usaba `new Date().toISOString()`, que siempre es UTC sin importar el `TZ` del proceso (a diferencia
+  de `getDate()/getMonth()`, que sí lo consultan). Chile va en UTC-3 o UTC-4 según la época del año
+  (sí tiene cambio de hora estacional), así que el timestamp quedaba varias horas adelantado — como
+  si el documento se hubiera firmado en el futuro. Confirmado con un documento real: `TmstFirmaEnv`
+  coincidía casi al segundo con la hora UTC de emisión, en vez de ir 3-4 horas antes. Nueva utilidad
+  `utils/fecha-chile.js` (`timestampChile()`, con `Intl.DateTimeFormat` — igual criterio que
+  `fechaHoyChile()` del consumidor, nunca un offset fijo hardcodeado porque la regla de DST de Chile
+  cambia). Además, **`EnvioDTE.setCaratula()` ignoraba cualquier `TmstFirmaEnv` que se le pasara**
+  (siempre recalculaba internamente) mientras que `EnvioBOLETA.setCaratula()` sí lo respetaba: ahora
+  ambos lo hacen igual, así que un consumidor puede fijar la hora si lo necesita. Mismo patrón de bug
+  corregido en `ConsumoFolio.js` (RCOF de boletas). Corrección deliberada, no un fix a ciegas: se
+  aisló contra el SII real (maullín) y **se confirmó que este bug NO era la causa de ningún rechazo
+  observado** — una boleta con el timestamp en UTC crudo (a propósito) fue aceptada igual (`EPR`), y
+  una factura con el timestamp corregido pero un campo del receptor mal nombrado (bug aparte, del
+  consumidor) siguió rechazada. Se corrige de todas formas porque es objetivamente incorrecto y podría
+  causar un rechazo en otro escenario. Evidencia: lectura de código, test unitario
+  (`test/envio-tmst-firma-en-chile.test.js`) y consulta/pruebas reales al SII.
+
+## [2.29.0] - 2026-09-26
+
+### Corregido
+
+- **Una boleta con 6 o más líneas de detalle la rechazaba el SII (RSC).** El DTE se armaba sin
+  ningún salto de línea, todo en UNA sola línea, y el SII rechaza con `CHR-00002: Line too long (4090)`
+  cualquier XML con una línea de más de unos 4090 caracteres. Una boleta de 7 líneas ya la
+  superaba; el formato permite hasta 60. Reproducido en un ambiente de certificación de forma
+  determinista: 10 líneas, `RSC`; 5 líneas, aceptada. Ahora `DTE` separa en su propia línea el
+  encabezado, cada `<Detalle>`, cada `<DscRcgGlobal>`, cada `<Referencia>` y el `<TED>`, ANTES de
+  canonicalizar y firmar, de modo que el digest cubre esos saltos igual que el SII al validar.
+  Verificado con el SII: boletas de 7, 10 y 40 líneas y una factura de 12 aceptadas. Aplica a
+  todos los tipos (boleta, factura, nota, guía). El contenido de los campos no cambia.
+
+## [2.28.0] - 2026-09-26
+
+### Corregido
+
+- **La resolución de producción se leía de certificación.** `SiiPortalAuth.obtenerDatosEmpresa` consultaba
+  siempre `maullin.sii.cl`, pero la fecha y el número de resolución son POR AMBIENTE: para el mismo RUT
+  maullin devuelve `2026-09-21` / `0` y palena `2014-08-22` / `80` (medido el 25/09/2026). Un consumidor
+  que guardaba ese dato como "resolución de producción" enviaba facturas y notas de crédito con la
+  carátula de certificación y el SII las rechazaba con "Error en Carátula".
+
+### Agregado
+
+- `obtenerDatosEmpresa(rut, dv, cookieJar, ambiente)`, `fetchDatosEmpresa(rut, dv, ambiente)` y
+  `SiiPortalAuth.obtenerEmisor({ ..., ambiente })` aceptan `'certificacion'` (default, maullin) o
+  `'produccion'` (palena). Compatible: sin ambiente todo sigue leyendo maullin. Un ambiente desconocido
+  lanza `TypeError`.
+- Los datos del contribuyente (`obtenerDatosContribuyente`: giro, dirección, comuna, acteco) siguen
+  saliendo de maullin: palena no devuelve esa página y son los mismos datos en ambos ambientes.
+
+## [2.27.0] - 2026-09-25
+
+### Agregado (estado compartido entre réplicas)
+
+- **Puerto `StateStore`** (`load`, `save`, `remove`) para el estado que debe sobrevivir entre corridas
+  y verse entre réplicas, con `MemoryStateStore` y `FileStateStore`. Exportados desde `index.js` y
+  declarados en el `.d.ts`. `SiiPortalAuth.configurarSesion({ store, lock, estado })` acepta el campo
+  nuevo `estado`, y `SiiPortalAuth.estadoConfigurado()` lo devuelve.
+- **`FolioService`** guarda los folios ya anulados por el `StateStore` (opción `estado` o el
+  configurado para el proceso).
+- **`CertRunner`** guarda el período de libros, los totales LTC y los folios usados por el
+  `StateStore` (opción `estado`).
+- **`SiiSession` usa el store compartido**: con un `SessionStore` configurado, `ensureSession` toma el
+  lock del certificado, reutiliza la sesión guardada en vez de autenticarse otra vez y la guarda al
+  terminar. Cubre a `FolioService`, `CafSolicitor`, `SiiCertificacion` y `SetsProvider` sin necesitar
+  `sessionPath`. Métodos nuevos: `cargarDeAlmacen()`, `guardarEnAlmacen()` y `borrarDeAlmacen()`.
+  `SiiSession` y `SiiPortalAuth` identifican el certificado con la misma huella.
+
+### Cambiado
+
+- Los helpers internos de `CertRunner` que leían y escribían estado pasan a ser asíncronos, y
+  `resetPeriodoLibros()` devuelve una promesa. `FolioService.reobtenerCaf` acepta un `yaEmitido` que
+  puede devolver una promesa. Sin configurar nada, los archivos y sus nombres son los de siempre y
+  lo ya guardado se sigue leyendo.
+
+### Corregido
+
+- `SiiPortalAuth.obtenerEmisor` ahora corre bajo el lock del certificado (`conSesion`). Sin esto,
+  N llamadas simultaneas (o de varias replicas) abrian N sesiones de portal en vez de una.
+
+### Sin cambios a propósito
+
+- `FolioRegistry` sigue en archivo: su API es síncrona y pública. Un servicio que lleve el control de
+  folios en su propia base no lo usa.
+
+## [2.26.0] - 2026-09-24
+
+### Agregado (sesión del portal compartida entre réplicas)
+
+La sesión del portal SII es un recurso escaso por certificado: el SII limita las sesiones
+autenticadas simultáneas por RUT, y las cookies Tivoli se rompen con requests concurrentes de la
+misma sesión. Con una sola réplica bastaba un archivo y un mutex en el proceso; con varias, cada
+réplica abría su propia sesión. Ahora la persistencia y la exclusión son intercambiables.
+
+- **Puertos** `SessionStore` (`load`, `save`, `remove`) y `SessionLock` (`withLock`), con
+  adaptadores en memoria (`MemorySessionStore`, `MemorySessionLock`) y `SessionBroker`, el único
+  punto de acceso, que agrega reentrancia. Exportados desde `index.js` y declarados en el `.d.ts`.
+- `SiiPortalAuth.configurarSesion({ store, lock })` los inyecta (por ejemplo con Redis).
+  **Sin llamarlo, todo sigue igual**: archivo y mutex en el proceso.
+- `auth.conSesion(fn)`: toma el lock, autentica o reutiliza la sesión guardada, ejecuta `fn` y
+  libera. Garantiza una sesión por certificado y un solo usuario a la vez entre procesos.
+- `auth.limpiarSesion()` descarta solo la sesión de ese certificado.
+- `SiiPortalAuth.persistirSesion(pfx, clave)`: el inverso. `CafSolicitor` guarda su login solo en
+  memoria; esto lo lleva al store configurado para que otra réplica no abra una sesión más.
+- `SiiPortalAuth.hidratarSesion(pfx, clave)`: trae la sesión del store configurado a la memoria
+  del proceso, para que `CafSolicitor` (que usa `getCookieStringForPfx`, síncrono) la encuentre.
+  Con un store inyectado, `getCookieStringForPfx` ya no lee el archivo local, que puede estar viejo.
+
+### Corregido
+
+- **Al reintentar con sesión inválida, `obtenerDatosEmpresa` borraba las sesiones de TODOS los
+  certificados** (`limpiarSesionCache()` sin argumento). Ahora solo la del certificado en uso,
+  y también descarta la copia en memoria para forzar un login real.
+
+### No cambia
+
+- Las estáticas de archivo (`_cargarSesionCache`, `_guardarSesionCache`, `limpiarSesionCache`),
+  el TTL de 90 min, la poda y la migración v1 a v2 siguen siendo la implementación por defecto.
+- `CafSolicitor`, `SiiSession` y `SiiCertificacion` conservan sus archivos `sessionPath`.
+
 ## [2.25.0] - 2026-09-13
 
 ### Cambiado

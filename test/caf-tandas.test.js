@@ -162,6 +162,30 @@ async function main() {
     console.log('✓ Tandas: el tope ya consultado se reusa en la primera tanda');
   }
 
+  // ── 7. Cero folios por un motivo que no es un tope: propaga el código real ──────
+  //
+  // Caso real (2026-09-28, un comercio, tipo 39): el SII no ofrece el tipo en el
+  // selector (TIPO_NO_HABILITADO_TIMBRAJE). Con el TOPE_SII_INSUFICIENTE genérico,
+  // dte-service interpretaba "folios en el aire sin declarar" y reintentaba para
+  // siempre — acá no hay ningún tope que declarar, el tipo no está habilitado.
+  {
+    const { svc, pedidos } = servicioFalso([
+      {
+        tope: { sinTope: false, maxAutor: 4, foliosDisp: 0 }, entrega: 0,
+        errorCode: 'TIPO_NO_HABILITADO_TIMBRAJE',
+      },
+    ]);
+
+    const r = await svc.solicitarCafPorTandas({ tipoDte: 39, cantidad: 100 });
+
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.errorCode, 'TIPO_NO_HABILITADO_TIMBRAJE',
+      'no debe quedar disfrazado de TOPE_SII_INSUFICIENTE');
+    assert.strictEqual(r.otorgados, 0);
+    assert.strictEqual(pedidos.length, 1, 'no reintenta: un tipo no habilitado no se arregla insistiendo');
+    console.log('✓ Tandas: cero folios por tipo no habilitado propaga el código real, no un tope');
+  }
+
   fs.rmSync(raiz, { recursive: true, force: true });
   console.log('\nTodos los checks de tandas de CAF pasaron.');
 }

@@ -367,21 +367,27 @@ class CafSolicitor {
    * en el HTML —que en producción no se guarda— y el operador ve `UNKNOWN` sin más.
    */
   static textoVisible(html, max = 400) {
-    return String(html || '')
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/gi, ' ').replace(/&aacute;/gi, 'a').replace(/&eacute;/gi, 'e')
-      .replace(/&iacute;/gi, 'i').replace(/&oacute;/gi, 'o').replace(/&uacute;/gi, 'u')
-      .replace(/&ntilde;/gi, 'n').replace(/&[a-z]+;/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, max);
+    return require('./utils/html-texto').textoVisible(html, max);
   }
 
   static esUsuarioSinPermiso(html) {
     return /no\s+tiene\s+permiso\s+en\s+(la\s+)?empresa|usuario\s+no\s+autorizado\s+para\s+(la\s+)?empresa|no\s+est.{0,8}\s*autorizado\s+para\s+operar\s+en\s+la\s+empresa/i
       .test(CafSolicitor.textoVisible(html, 4000));
+  }
+
+  /**
+   * ¿El <SELECT name=COD_DOCTO> de of_solicita_folios_dcto ofrece `tipoDte` como
+   * opción? El SII arma este selector solo con los tipos habilitados para timbraje
+   * con este RUT; si ninguno lo está, entrega un único <option value="-1">SIN
+   * DOCUMENTOS</option>. Enviar COD_DOCTO de un tipo que el propio selector no
+   * ofrecía termina en un rechazo genérico del SII más adelante (ST-RS-DTE-15-1),
+   * indistinguible de un timeout — hay que cortar acá, con el motivo real.
+   */
+  static _selectOfreceTipo(html, tipoDte) {
+    const selectMatch = /<select[^>]*name\s*=\s*COD_DOCTO[^>]*>([\s\S]*?)<\/select>/i.exec(html);
+    if (!selectMatch) return true; // sin <select> que inspeccionar, no bloquear por esto
+    const options = [...selectMatch[1].matchAll(/<option[^>]*value\s*=\s*["']?(-?\d+)["']?/gi)];
+    return options.some((m) => m[1] === String(tipoDte));
   }
 
   /**
@@ -873,6 +879,27 @@ class CafSolicitor {
 
       // Selección de tipo de documento
       if (currentHtml.includes('COD_DOCTO')) {
+        // El <SELECT name=COD_DOCTO> puede llegar con un solo <option value="-1">
+        // SIN DOCUMENTOS</option>: el RUT no tiene NINGÚN tipo habilitado para
+        // timbraje todavía (la certificación no terminó, o el tipo pedido no está
+        // entre los habilitados). Sin este chequeo, el código sigue de largo,
+        // envía COD_DOCTO=tipoDte igual (un value que el <select> ni ofrecía) y el
+        // SII responde con un error genérico (ST-RS-DTE-15-1) más adelante, que
+        // termina cayendo en el mismo camino que un tope real (MAX_AUTOR
+        // insuficiente) — un tope no existe acá, el tipo simplemente no está
+        // habilitado y reintentar no lo arregla nunca. Caso real de un comercio:
+        // tipo 39, 2026-09-28.
+        if (!CafSolicitor._selectOfreceTipo(currentHtml, tipoDte)) {
+          return {
+            success: false,
+            errorCode: 'TIPO_NO_HABILITADO_TIMBRAJE',
+            error:
+              `El SII no ofrece el tipo de documento ${tipoDte} para timbraje con este RUT ` +
+              `("SIN DOCUMENTOS" en el selector). La empresa debe completar su certificación ` +
+              `de este tipo de documento, o verificar en el portal del SII que esté habilitada.`,
+          };
+        }
+
         const selectInputs = SiiSession.extractInputValues(currentHtml);
         // NO enviar CANT_DOCTOS aquí — el browser tampoco lo envía en este paso.
         // Si se envía un número, el SII no incluye MAX_AUTOR ni CONTROL="S" en la

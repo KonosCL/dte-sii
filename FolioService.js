@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const SiiSession = require('./SiiSession');
 const FolioRegistry = require('./FolioRegistry');
+const { resolverEstado } = require('./SiiEstado');
 const CAF = require('./CAF');
 const CafSolicitor = require('./CafSolicitor');
 const { resolveDataDir } = require('./utils/paths');
@@ -74,6 +75,12 @@ class FolioService {
      * al SII: varios minutos de la corrida gastados en no hacer nada.
      */
     this.stateDir = options.stateDir || this.debugDir;
+    /**
+     * Dónde vive ese estado. Por defecto son archivos en `stateDir`; un consumidor con varias
+     * réplicas pasa `estado` (StateStore) o lo configura una vez con
+     * `SiiPortalAuth.configurarSesion({ estado })`.
+     */
+    this._estadoExplicito = options.estado || null;
     
     // Sesión SII — priorizar reutilización para evitar bans del SII
     // Orden: (1) sesión explícita, (2) registro de CafSolicitor, (3) nueva sesión
@@ -388,9 +395,12 @@ class FolioService {
     // Por eso el llamador puede pasar `yaEmitido`: es el mismo registro con el que descarta
     // los CAF de disco (`CertRunner._rangoYaConsumido`), aplicado también acá. Sin ese dato
     // la reobtención no puede saberlo, porque el SII no lo publica.
-    const emitidos = yaEmitido
-      ? rangos.filter(r => yaEmitido({ folioDesde: r.folioDesde, folioHasta: r.folioHasta }))
+    // `yaEmitido` puede ser síncrono o devolver una promesa (el registro puede vivir en un
+    // StateStore remoto).
+    const marcas = yaEmitido
+      ? await Promise.all(rangos.map(r => yaEmitido({ folioDesde: r.folioDesde, folioHasta: r.folioHasta })))
       : [];
+    const emitidos = rangos.filter((_, i) => marcas[i]);
     const emitidosSet = new Set(emitidos);
     const usables = rangos.filter(r => !r.anulado && !emitidosSet.has(r));
     const anulados = rangos.filter(r => r.anulado).length;
@@ -626,6 +636,11 @@ class FolioService {
     const cafPaths = [];
     let cubiertos = 0;
     let tope = null;
+    // Motivo de la última tanda que no entregó folios — permite distinguir un tope
+    // real (el SII entregó algunos y no más) de un rechazo que no tiene nada que ver
+    // con topes (p. ej. TIPO_NO_HABILITADO_TIMBRAJE) y que un reintento no arregla.
+    let ultimoErrorCode = null;
+    let ultimoError = null;
 
     for (let tanda = 1; tanda <= maxTandas && cubiertos < objetivo; tanda++) {
       tope = (tanda === 1 && topeInicial) ? topeInicial : await this.consultarTope({ tipoDte });
@@ -650,6 +665,8 @@ class FolioService {
       const res = await this.cafSolicitor.solicitar({ tipoDte, cantidad: pedir, minCantidad: 1 });
       const otorgados = res.success ? this._contarFoliosCaf(res.cafPath) : 0;
       if (!otorgados) {
+        ultimoErrorCode = res.errorCode || null;
+        ultimoError = res.error || null;
         console.warn(
           `[FolioService] Tipo ${tipoDte}: tanda ${tanda} no entregó folios ` +
           `(${res.errorCode || 'sin código'}: ${res.error || 'sin detalle'}) — se corta`
@@ -664,6 +681,17 @@ class FolioService {
 
     const base = { maxAutor: tope?.maxAutor ?? null, foliosDisp: tope?.foliosDisp ?? null };
     if (cubiertos < objetivo) {
+      // Cero folios en NINGUNA tanda y el motivo no es un tope (p. ej. el tipo de
+      // documento no está habilitado para timbraje): propagar el código real. Con
+      // TOPE_SII_INSUFICIENTE, quien llama entiende "hay folios en el aire sin
+      // declarar" y reintenta para siempre — acá no hay ningún tope que declarar.
+      if (cubiertos === 0 && ultimoErrorCode && ultimoErrorCode !== 'TOPE_SII_INSUFICIENTE') {
+        return {
+          ok: false, cafPaths, otorgados: cubiertos, ...base,
+          errorCode: ultimoErrorCode,
+          error: ultimoError || `El SII no entregó folios del tipo ${tipoDte} (${ultimoErrorCode}).`,
+        };
+      }
       return {
         ok: false, cafPaths, otorgados: cubiertos, ...base,
         errorCode: 'TOPE_SII_INSUFICIENTE',
@@ -800,7 +828,7 @@ class FolioService {
    *   folios de un RUT antes de detenerla.
    */
   /**
-   * Ruta del registro de rangos ya anulados, por RUT y tipo de DTE.
+   * Clave del registro de rangos ya anulados, por RUT y tipo de DTE.
    *
    * El SII sigue listando un folio anulado como "sin utilizar" —anulado es, en
    * efecto, sin usar— así que `consultarFolios` lo devuelve para siempre y cada
@@ -808,16 +836,20 @@ class FolioService {
    * round-trips al SII que solo pueden fallar, y peor: van comiendo el cupo de
    * `maxRangos`, hasta dejar fuera a los sobrantes que sí hay que anular.
    */
-  _anuladosPath(tipoDte) {
+  _anuladosClave(tipoDte) {
     const rutLimpio = String(this.rutEmisor || '').replace(/[^0-9kK]/g, '');
-    return path.join(this.stateDir, `folios-anulados-${rutLimpio}-${tipoDte}.json`);
+    return `folios-anulados-${rutLimpio}-${tipoDte}`;
+  }
+
+  /** StateStore efectivo (explícito, configurado para el proceso, o archivos en stateDir). */
+  _estado() {
+    return resolverEstado(this.stateDir, this._estadoExplicito);
   }
 
   /** Set de claves "desde-hasta" que el SII ya reportó como anuladas. */
-  _cargarAnulados(tipoDte) {
+  async _cargarAnulados(tipoDte) {
     try {
-      const raw = fs.readFileSync(this._anuladosPath(tipoDte), 'utf8');
-      const arr = JSON.parse(raw);
+      const arr = await this._estado().load(this._anuladosClave(tipoDte));
       return new Set(Array.isArray(arr) ? arr : []);
     } catch (_) {
       // Sin registro previo (o ilegible): se parte de cero. Nunca es fatal —
@@ -826,10 +858,9 @@ class FolioService {
     }
   }
 
-  _guardarAnulados(tipoDte, set) {
+  async _guardarAnulados(tipoDte, set) {
     try {
-      fs.mkdirSync(this.stateDir, { recursive: true });
-      fs.writeFileSync(this._anuladosPath(tipoDte), JSON.stringify([...set]), 'utf8');
+      await this._estado().save(this._anuladosClave(tipoDte), [...set]);
     } catch (err) {
       console.warn(`[FolioService] No se pudo persistir registro de anulados: ${err.message}`);
     }
@@ -846,8 +877,8 @@ class FolioService {
     const vistos     = new Set(); // claves "folioDesde-folioHasta" ya procesadas en esta ejecución
     // Rangos que el SII ya reportó como anulados en corridas anteriores: se
     // saltan de entrada para no gastar el cupo de `maxRangos` en reintentos
-    // que solo pueden volver a fallar. Ver `_anuladosPath`.
-    const yaAnulados = this._cargarAnulados(tipoDte);
+    // que solo pueden volver a fallar. Ver `_anuladosClave`.
+    const yaAnulados = await this._cargarAnulados(tipoDte);
     const yaAnuladosInicial = yaAnulados.size;
 
     const maxPasadas = 4;
@@ -1073,7 +1104,7 @@ class FolioService {
     }
 
     if (yaAnulados.size !== yaAnuladosInicial) {
-      this._guardarAnulados(tipoDte, yaAnulados);
+      await this._guardarAnulados(tipoDte, yaAnulados);
     }
 
     const totalAnulados   = anulados.reduce((s, r) => s + r.count, 0);

@@ -8,6 +8,7 @@
 
 const Signer = require('./Signer');
 const { formatRutSii } = require('./utils/rut');
+const { timestampChile } = require('./utils/fecha-chile');
 
 // ============================================
 // CLASE BASE ENVIO
@@ -57,8 +58,11 @@ class EnvioBase {
   /**
    * Generar timestamp para firma
    */
+  // Hora de Chile, no UTC — ver utils/fecha-chile.js. Antes usaba `new Date().toISOString()`, que
+  // siempre es UTC y dejaba el TmstFirmaEnv ~3h adelantado (Chile va en UTC-3): el SII lo rechazaba
+  // con "Error en Carátula" (confirmado con documentos reales, ver CLAUDE.md, "Bug conocido").
   _generateTimestamp() {
-    return new Date().toISOString().replace(/\.\d{3}Z$/, '');
+    return timestampChile();
   }
   
   /**
@@ -156,7 +160,9 @@ class EnvioBOLETA extends EnvioBase {
 class EnvioDTE extends EnvioBase {
   setCaratula(caratula) {
     this.setId = caratula.SetDTEId || caratula.SetId || this._generateSetId('DTE_SetDoc');
-    const timestamp = this._generateTimestamp();
+    // Respeta un TmstFirmaEnv explícito, igual que EnvioBOLETA — antes SIEMPRE recalculaba y un
+    // llamador no podía corregir la hora aunque se la pasara.
+    const timestamp = caratula.TmstFirmaEnv || this._generateTimestamp();
     
     // Ordenar subtotales (33, 61, 56 primero)
     const subTotDTE = this._getSubTotDTE().sort((a, b) => {
