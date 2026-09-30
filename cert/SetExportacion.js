@@ -53,6 +53,28 @@ const FMA_PAG_EXP_ANTICIPO = 32;
 /** Indicadores de servicio con los que CodModVenta, CodClauVenta y TotClauVenta dejan de ser obligatorios. */
 const IND_SERVICIO_SIN_CLAUSULA = [3, 4, 5];
 
+/**
+ * Documentos de Aduana que un documento de exportación puede referenciar (TpoDocRef, formato
+ * DTE). El set los nombra en líneas "REFERENCIA:  DUS".
+ */
+const REFERENCIAS_EXPORTACION = [
+  [/ORDEN\s+DE\s+COMPRA/, 801],
+  [/NOTA\s+DE\s+PEDIDO/, 802],
+  [/CONTRATO/, 803],
+  [/RESOLUCION\s+SNA|SNA/, 812],
+  [/\bDUS\b/, 807],
+  [/B\/L|CONOCIMIENTO\s+DE\s+EMBARQUE/, 808],
+  [/\bAWB\b|AIR\s*WAY\s*BILL/, 809],
+  [/\bMIC\b|MANIFIESTO\s+INTERNACIONAL|\bDTA\b/, 810],
+  [/CARTA\s+DE\s+PORTE/, 811],
+  [/PASAPORTE/, 813],
+  [/RESOLUCION/, 804],
+];
+
+/** IndServicio de exportación: 3 factura de servicios, 4 servicios de hotelería (formato DTE). */
+const IND_SERVICIO_SERVICIOS = 3;
+const IND_SERVICIO_HOTELERIA = 4;
+
 /** Tipos de bulto que son contenedores (Aduana): piden IdContainer, Sello y EmisorSello. */
 const BULTOS_CONTENEDOR = [73, 74, 75, 76, 78];
 
@@ -217,6 +239,11 @@ class SetExportacion extends SetBase {
     if (caso.comisionExtranjero) {
       movimientos.push({ tipo: this._tipoComision(caso), valor: caso.comisionExtranjero, glosa: 'COMISIONES EN EL EXTRANJERO' });
     }
+    // "(**) Las cifras de flete y seguro deben indicarse en los campos informativos del
+    // encabezado ... y también en el área de recargo como dos líneas distintas de recargos
+    // globales" (instrucciones del set de exportación).
+    if (!esNota && caso.flete > 0) movimientos.push({ tipo: 'R', valor: caso.flete, enPorcentaje: false, glosa: 'FLETE' });
+    if (!esNota && caso.seguro > 0) movimientos.push({ tipo: 'R', valor: caso.seguro, enPorcentaje: false, glosa: 'SEGURO' });
     // Una nota que anula copia también los descuentos/recargos del documento que anula.
     if (esNota && caso.codRef === 1 && !movimientos.length && docRef.movimientos?.length) {
       movimientos.push(...docRef.movimientos);
@@ -226,7 +253,7 @@ class SetExportacion extends SetBase {
 
     // IdDoc. En exportación no va FmaPago sino FmaPagExp (tabla de Aduana).
     const idDoc = { TipoDTE: tipo, Folio: folio, FchEmis: fecha };
-    const indServicio = caso.indServicio ?? docRef?.indServicio;
+    const indServicio = caso.indServicio ?? docRef?.indServicio ?? this._indServicio(caso);
     if (indServicio) idDoc.IndServicio = indServicio;
     if (caso.formaPago) {
       const fp = resolver('formaPago', caso.formaPago, 'FORMA DE PAGO EXPORTACION');
@@ -236,13 +263,22 @@ class SetExportacion extends SetBase {
       if (fp.codigo === FMA_PAG_EXP_ANTICIPO) idDoc.FchCancel = fecha;
     }
 
-    const receptor = this._receptor(pais, docRef);
+    const nacionalidad = pais || (caso.nacionalidad ? resolver('pais', caso.nacionalidad, 'NACIONALIDAD') : null);
+    const receptor = this._receptor(nacionalidad, docRef);
     const transporte = this._transporte(caso, { pais, Totales, indServicio, resolver, avisos, esNota });
 
     const referencias = [buildSetReferencia(caso.id, fecha)];
+    for (const texto of caso.referenciasExportacion || []) {
+      referencias.push({
+        NroLinRef: referencias.length + 1,
+        TpoDocRef: this._tpoDocRefExportacion(caso, texto),
+        FolioRef: this._folioReferencia(caso, texto),
+        FchRef: fecha,
+      });
+    }
     if (esNota) {
       referencias.push({
-        NroLinRef: 2,
+        NroLinRef: referencias.length + 1,
         TpoDocRef: docRef.tipoDte,
         FolioRef: docRef.folio,
         FchRef: docRef.fecha,
@@ -280,13 +316,55 @@ class SetExportacion extends SetBase {
 
   /** Items del caso en la forma que espera buildDetalleExportacion. */
   _items(caso) {
-    return (caso.items || []).map((i) => ({
-      nombre: i.nombre,
-      cantidad: i.cantidad ?? 1,
-      precio: i.precio ?? 0,
-      ...(i.unidad ? { unidad: i.unidad } : {}),
-      ...(this._descuentoPct(i.descuento) ? { descuentoPct: this._descuentoPct(i.descuento) } : {}),
-    }));
+    const porLinea = new Map((caso.descuentosLinea || []).map((d) => [Number(d.linea), Number(d.pct)]));
+    const lineas = caso.items || [];
+    for (const n of porLinea.keys()) {
+      if (n < 1 || n > lineas.length) throw new Error(`Caso ${caso.id}: DESCUENTO LINEA # ${n}, pero el caso tiene ${lineas.length} línea(s)`);
+    }
+    return lineas.map((i, idx) => {
+      const descuentoPct = porLinea.get(idx + 1) || this._descuentoPct(i.descuento);
+      return {
+        nombre: i.nombre,
+        cantidad: i.cantidad ?? 1,
+        precio: i.precio ?? 0,
+        ...(i.unidad ? { unidad: i.unidad } : {}),
+        ...(descuentoPct ? { descuentoPct } : {}),
+        ...(caso.recargoLineaPct ? { recargoPct: Number(caso.recargoLineaPct) } : {}),
+      };
+    });
+  }
+
+  /**
+   * IndServicio cuando el set no lo dice: líneas con "VALOR LINEA" son servicios (3); con
+   * NACIONALIDAD del cliente y sin país de destino, servicios de hotelería (4).
+   */
+  _indServicio(caso) {
+    if (caso.nacionalidad && !caso.paisDestino) return IND_SERVICIO_HOTELERIA;
+    if (caso.itemsValorLinea) return IND_SERVICIO_SERVICIOS;
+    return undefined;
+  }
+
+  _tpoDocRefExportacion(caso, texto) {
+    const t = String(texto).toUpperCase();
+    const hit = REFERENCIAS_EXPORTACION.find(([re]) => re.test(t));
+    if (!hit) {
+      throw new Error(`Caso ${caso.id}: REFERENCIA "${texto}" no corresponde a un documento de Aduana conocido ` +
+        '(DUS, AWB, B/L, MIC, CARTA DE PORTE, RESOLUCION SNA, PASAPORTE, CONTRATO, ORDEN DE COMPRA, NOTA DE PEDIDO)');
+    }
+    return hit[1];
+  }
+
+  /**
+   * El set nombra el documento de Aduana pero no su número. Se recibe por configuración
+   * (config.exportacion.folioReferencia: valor fijo o función (caso, texto) => folio).
+   */
+  _folioReferencia(caso, texto) {
+    const f = this.config.exportacion?.folioReferencia;
+    const v = typeof f === 'function' ? f(caso, texto) : f;
+    if (v === undefined || v === null || v === '') {
+      throw new Error(`Caso ${caso.id}: el set referencia "${texto}" sin número; indícalo en config.exportacion.folioReferencia`);
+    }
+    return String(v);
   }
 
   _descuentoPct(texto) {
@@ -413,10 +491,8 @@ class SetExportacion extends SetBase {
       a.CodClauVenta = resolver('clausulaVenta', caso.clausulaVenta, 'CLAUSULA DE VENTA').codigo;
     }
     if (caso.totalClausula) {
+      // El valor del set manda aunque no calce con el total del documento.
       a.TotClauVenta = caso.totalClausula;
-      if (Math.abs(Number(caso.totalClausula) - Number(Totales.MntTotal)) > 0.005) {
-        avisos.push(`TOTAL CLAUSULA DE VENTA del set (${caso.totalClausula}) distinto del total del documento (${Totales.MntTotal})`);
-      }
     } else if (a.CodClauVenta && conClausula) {
       a.TotClauVenta = Totales.MntTotal;
       avisos.push(`el set no trae TOTAL CLAUSULA DE VENTA; se informa el total del documento (${Totales.MntTotal})`);
@@ -432,12 +508,24 @@ class SetExportacion extends SetBase {
         preferir: (c) => !esPuertoChileno(c),
       }).codigo;
     }
+    if (caso.unidadTara) a.CodUnidMedTara = resolver('unidad', caso.unidadTara, 'UNIDAD DE MEDIDA DE TARA').codigo;
+    if (caso.unidadPesoBruto) a.CodUnidPesoBruto = resolver('unidad', caso.unidadPesoBruto, 'UNIDAD PESO BRUTO').codigo;
+    if (caso.unidadPesoNeto) a.CodUnidPesoNeto = resolver('unidad', caso.unidadPesoNeto, 'UNIDAD PESO NETO').codigo;
     if (caso.totalBultos) a.TotBultos = caso.totalBultos;
     if (caso.tipoBulto) {
       const bulto = resolver('tipoBulto', caso.tipoBulto, 'TIPO DE BULTO');
       a.TipoBultos = [{ CodTpoBultos: bulto.codigo, ...(caso.totalBultos ? { CantBultos: caso.totalBultos } : {}) }];
       if (BULTOS_CONTENEDOR.includes(bulto.codigo)) {
-        avisos.push(`bulto ${bulto.glosa}: el set no trae número de contenedor ni sello (IdContainer, Sello)`);
+        const cont = this.config.exportacion?.contenedor;
+        if (cont?.id) {
+          Object.assign(a.TipoBultos[0], {
+            IdContainer: cont.id,
+            ...(cont.sello ? { Sello: cont.sello } : {}),
+            ...(cont.emisorSello ? { EmisorSello: cont.emisorSello } : {}),
+          });
+        } else {
+          avisos.push(`bulto ${bulto.glosa}: el set no trae número de contenedor ni sello (IdContainer, Sello)`);
+        }
       }
     }
     if (caso.flete > 0) a.MntFlete = caso.flete;

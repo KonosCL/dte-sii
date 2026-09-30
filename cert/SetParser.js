@@ -296,6 +296,16 @@ function extraerCasosDelSet(texto) {
         paisDestino: null,
         comisionExtranjero: null,
         tipoCambio: null,
+        // Exportación: referencias a documentos de Aduana ("REFERENCIA: DUS"), unidades de
+        // tara y peso, nacionalidad (servicios de hotelería), recargo y descuentos por línea.
+        referenciasExportacion: [],
+        unidadTara: null,
+        unidadPesoBruto: null,
+        unidadPesoNeto: null,
+        nacionalidad: null,
+        recargoLineaPct: null,
+        descuentosLinea: [],
+        itemsValorLinea: false,
         raw: [],
         // Líneas del caso que ningún patrón reconoció. En los sets conocidos queda vacío; si
         // el SII agrega un dato nuevo (pasó con exportación), aparece acá en vez de perderse.
@@ -320,6 +330,15 @@ function extraerCasosDelSet(texto) {
       if (matchDocumento) {
         casoActual.documento = matchDocumento[1].trim();
         casoActual.tipoDTE = detectarTipoDTE(casoActual.documento);
+        continue;
+      }
+
+      // Exportación: "REFERENCIA:  DUS" (con dos puntos) es un documento de Aduana que el
+      // documento cita, no el caso que corrige ("REFERENCIA  FACTURA ... CASO n-m").
+      if (setActual?.tipo === 'EXPORTACION' && /^REFERENCIA\s*:/i.test(lineaTrim)
+          && !/CASO\s+\d+-\d+/i.test(lineaTrim)) {
+        const v = valorDeCampo(lineaTrim);
+        if (v) casoActual.referenciasExportacion.push(v);
         continue;
       }
 
@@ -453,14 +472,39 @@ function extraerCasosDelSet(texto) {
         continue;
       }
 
+      if (setActual?.tipo === 'EXPORTACION') {
+        // Las instrucciones al contribuyente van al final del set, pegadas al último caso: no
+        // son datos del caso. Lo que dicen (flete y seguro también como recargos) lo aplica
+        // SetExportacion.
+        if (/^INSTRUCCIONES\s+AL\s+CONTRIBUYENTE/i.test(lineaTrim)) { casoActual.enInstrucciones = true; continue; }
+        if (casoActual.enInstrucciones || /^\(\*\*\)/.test(lineaTrim)) continue;
+        if (/^UNIDAD\s+(DE\s+)?MEDIDA\s+DE\s+TARA/i.test(lineaTrim)) { casoActual.unidadTara = valorDeCampo(lineaTrim); continue; }
+        if (/^UNIDAD\s+(DE\s+)?PESO\s+BRUTO/i.test(lineaTrim)) { casoActual.unidadPesoBruto = valorDeCampo(lineaTrim); continue; }
+        if (/^UNIDAD\s+(DE\s+)?PESO\s+NETO/i.test(lineaTrim)) { casoActual.unidadPesoNeto = valorDeCampo(lineaTrim); continue; }
+        if (/^NACIONALIDAD\s*:/i.test(lineaTrim)) { casoActual.nacionalidad = valorDeCampo(lineaTrim); continue; }
+        // "%10 RECARGO EN LA LINEA DE ITEM POR COMISIONES EN EL EXTERIOR" (el SII escribe el % antes)
+        const mRecLinea = lineaTrim.match(/^%?\s*(\d+(?:[.,]\d+)?)\s*%?\s*RECARGO\s+EN\s+LA\s+LINEA/i);
+        if (mRecLinea) { casoActual.recargoLineaPct = numeroDelSet(mRecLinea[1]); continue; }
+        // "DESCUENTO LINEA # 1:   5%"
+        const mDescLinea = lineaTrim.match(/^DESCUENTO\s+LINEA\s*#?\s*(\d+)\s*:\s*(\d+(?:[.,]\d+)?)\s*%/i);
+        if (mDescLinea) {
+          casoActual.descuentosLinea.push({ linea: parseInt(mDescLinea[1]), pct: numeroDelSet(mDescLinea[2]) });
+          continue;
+        }
+        // Instrucción que ya se cumple (la nota toma el precio de la factura) y separadores.
+        if (/PRECIO\s+UNITARIO.+MISMO/i.test(lineaTrim) || /^-{5,}$/.test(lineaTrim)) continue;
+      }
+
       const matchTipoCambio = lineaTrim.match(/^TIPO\s+DE\s+CAMBIO[^:]*:\s*(.+)$/i);
       if (matchTipoCambio) {
         casoActual.tipoCambio = numeroDelSet(matchTipoCambio[1]);
         continue;
       }
 
-      // Ignorar cabeceras de items
+      // Ignorar cabeceras de items. "ITEM  VALOR LINEA": cada línea trae el valor de la
+      // línea (servicios), no una cantidad.
       if (lineaTrim.match(/^ITEM\s+(CANTIDAD|VALOR)/i)) {
+        if (/^ITEM\s+VALOR/i.test(lineaTrim)) casoActual.itemsValorLinea = true;
         continue;
       }
 
@@ -524,6 +568,10 @@ function extraerCasosDelSet(texto) {
         if (partes.length === 2) {
           // NOMBRE, CANTIDAD (guías sin precio) o NOMBRE, VALOR (NC/ND)
           const valor = num(partes[1]);
+          if (!isNaN(valor) && casoActual.itemsValorLinea) {
+            casoActual.items.push({ nombre, cantidad: 1, precioUnitario: valor });
+            continue;
+          }
           if (!isNaN(valor)) {
             // Para NC/ND que modifican monto, el segundo valor es el precio unitario modificado
             if (casoActual.razonReferencia?.includes('MODIFICA MONTO')) {
@@ -1052,6 +1100,14 @@ function generarEstructuraSetExportacion(set) {
       comisionExtranjero: caso.comisionExtranjero,
       ...(caso.comisionTexto ? { comisionTexto: caso.comisionTexto } : {}),
       ...(caso.tipoCambio ? { tipoCambio: caso.tipoCambio } : {}),
+      ...(caso.referenciasExportacion?.length ? { referenciasExportacion: caso.referenciasExportacion } : {}),
+      ...(caso.unidadTara ? { unidadTara: caso.unidadTara } : {}),
+      ...(caso.unidadPesoBruto ? { unidadPesoBruto: caso.unidadPesoBruto } : {}),
+      ...(caso.unidadPesoNeto ? { unidadPesoNeto: caso.unidadPesoNeto } : {}),
+      ...(caso.nacionalidad ? { nacionalidad: caso.nacionalidad } : {}),
+      ...(caso.recargoLineaPct ? { recargoLineaPct: caso.recargoLineaPct } : {}),
+      ...(caso.descuentosLinea?.length ? { descuentosLinea: caso.descuentosLinea } : {}),
+      ...(caso.itemsValorLinea ? { itemsValorLinea: true } : {}),
       ...(caso.descuentoGlobal ? { descuentoGlobal: caso.descuentoGlobal } : {}),
       ...(caso.casoReferenciado ? {
         referenciaCaso: caso.casoReferenciado,

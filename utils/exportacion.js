@@ -53,9 +53,9 @@ function redondear(valor, decimales) {
  *
  * Cada línea va con IndExe=1: en exportación todo es exento y `MntExe` es la suma de las
  * líneas marcadas así. Orden del XSD: NroLinDet, IndExe, NmbItem, QtyItem, UnmdItem, PrcItem,
- * DescuentoPct, DescuentoMonto, MontoItem.
+ * DescuentoPct, DescuentoMonto, RecargoPct, RecargoMonto, MontoItem.
  *
- * @param {Array<{nombre: string, cantidad?: number, precio?: number, unidad?: string, descuentoPct?: number}>} items
+ * @param {Array<{nombre: string, cantidad?: number, precio?: number, unidad?: string, descuentoPct?: number, recargoPct?: number}>} items
  * @param {Object} opciones
  * @param {string} opciones.moneda - Glosa TipMonType de la operación (ej. "DOLAR USA")
  * @returns {Object[]}
@@ -96,6 +96,16 @@ function buildDetalleExportacion(items, { moneda } = {}) {
       det.DescuentoPct = redondear(pct, 2);
       if (descuento > 0) det.DescuentoMonto = descuento;
       monto = redondearMonto(monto - descuento, moneda);
+    }
+    // Recargo de la línea (p. ej. comisiones en el exterior). Va después del descuento en el
+    // XSD y, como DescuentoMonto, es entero.
+    const rpct = Number(item.recargoPct || 0);
+    if (rpct > 0) {
+      const bruto = redondearMonto(cantidad * precio, moneda);
+      const recargo = Math.round(bruto * rpct / 100);
+      det.RecargoPct = redondear(rpct, 2);
+      if (recargo > 0) det.RecargoMonto = recargo;
+      monto = redondearMonto(monto + recargo, moneda);
     }
     det.MontoItem = monto;
     return det;

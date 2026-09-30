@@ -23,6 +23,15 @@ Versionado [SemVer](https://semver.org/lang/es/).
   y `CertRunner.obtenerSets`) no marca el SET01, que hasta ahora se pedía siempre. Por defecto
   sigue marcándolo. Pensado para una empresa ya autorizada que certifica documentos nuevos;
   no está probado todavía contra el portal.
+- **Exportación con el formato real del set del SII** (medido con un set descargado del portal en
+  septiembre de 2026): flete y seguro van también como dos recargos globales en `$` (lo pide el
+  set) y suman al total; ítems "VALOR LINEA" son servicios (cantidad 1, `IndServicio` 3) y con
+  NACIONALIDAD sin país, hotelería (`IndServicio` 4); "REFERENCIA: DUS/AWB/MIC/RESOLUCION SNA"
+  se emiten como referencias 807/809/810/812 con el folio de `config.exportacion.folioReferencia`
+  (sin él, lanza); recargo por línea (`RecargoPct`/`RecargoMonto`) y "DESCUENTO LINEA # n";
+  unidades de tara y peso (`CodUnidMedTara`, `CodUnidPesoBruto`, `CodUnidPesoNeto`); contenedor
+  desde `config.exportacion.contenedor`. `TotClauVenta` es el del set aunque no calce con el
+  total. Las instrucciones al contribuyente del final del set ya no quedan como líneas del caso.
 - `MuestrasImpresas` imprime en exportación moneda, tipo de cambio, país receptor y destino,
   puertos, bultos, cláusula, vía, flete y seguro, y los montos sin "$" en la moneda del set.
 

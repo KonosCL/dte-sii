@@ -240,8 +240,14 @@ test('plan: totales en la moneda del set, OtraMoneda en pesos y Aduana con los c
   const f2 = plan[1];
   assert.equal(f2.datos.Encabezado.IdDoc.FmaPagExp, 32);
   assert.equal(f2.datos.Encabezado.IdDoc.FchCancel, f2.datos.Encabezado.IdDoc.FchEmis);
-  assert.deepEqual(f2.datos.DscRcgGlobal, [{ NroLinDR: 1, TpoMov: 'R', GlosaDR: 'COMISIONES EN EL EXTRANJERO', TpoValor: '%', ValorDR: 10, IndExeDR: 1 }]);
-  assert.equal(f2.datos.Encabezado.Totales.MntTotal, 7700);
+  // Flete y seguro van también como recargos globales en $ ("(**)" del set) y suman al total.
+  assert.deepEqual(f2.datos.DscRcgGlobal, [
+    { NroLinDR: 1, TpoMov: 'R', GlosaDR: 'COMISIONES EN EL EXTRANJERO', TpoValor: '%', ValorDR: 10, IndExeDR: 1 },
+    { NroLinDR: 2, TpoMov: 'R', GlosaDR: 'FLETE', TpoValor: '$', ValorDR: 180.5, IndExeDR: 1 },
+    { NroLinDR: 3, TpoMov: 'R', GlosaDR: 'SEGURO', TpoValor: '$', ValorDR: 19.5, IndExeDR: 1 },
+  ]);
+  assert.equal(f2.datos.Encabezado.Totales.MntTotal, 7900);
+  assert.equal(f2.datos.Encabezado.Transporte.Aduana.MntFlete, 180.5);
   assert.equal(f2.datos.Encabezado.Transporte.Aduana.CodPtoEmbarque, 992);
   assert.equal(f2.datos.Encabezado.Transporte.Aduana.CodPaisRecep, 225);
 });
@@ -384,3 +390,154 @@ test('los dos sets de exportación se leen por separado en la página de avance'
 });
 
 test.after(() => fs.rmSync(TMP, { recursive: true, force: true }));
+
+
+// ── Formato real del SII (set de 2026, números de atención cambiados) ────────────
+// Sets 1 y 2 tal como los entrega el portal: "REFERENCIA:" con documentos de Aduana, ítems
+// "VALOR LINEA" (servicios), NACIONALIDAD (hotelería), unidades de tara y peso, recargo y
+// descuento por línea, y las instrucciones al contribuyente al final.
+const SET_REAL = [
+  "SET BASICO DOCUMENTOS DE EXPORTACION (1) - NUMERO DE ATENCION: 990087",
+  "CASO 990087-1",
+  "==============",
+  "DOCUMENTO\tFACTURA DE EXPORTACION ELECTRONICA",
+  "ITEM                            CANTIDAD\tUNIDAD MEDIDA\tPRECIO UNITARIO",
+  "CHATARRA DE ALUMINIO                202\t\tU\t\t    110",
+  "REFERENCIA:                                  MIC (MANIFIESTO INTERNACIONAL)",
+  "MONEDA DE LA OPERACION:                      DOLAR USA",
+  "FORMA DE PAGO EXPORTACION:                   ACRED",
+  "MODALIDAD DE VENTA:                          A FIRME",
+  "CLAUSULA DE VENTA DE EXPORTACION:            FOB",
+  "TOTAL CLAUSULA DE VENTA:                      609.91",
+  "VIA DE TRANSPORTE:                           AEREO",
+  "PUERTO DE EMBARQUE:                          ANTOFAGASTA",
+  "PUERTO DE DESEMBARQUE:                       BREMEN",
+  "UNIDAD DE MEDIDA DE TARA:                    U",
+  "UNIDAD PESO BRUTO:                           U",
+  "UNIDAD PESO NETO:                            U",
+  "TIPO DE BULTO:                               CONTENEDOR REFRIGERADO",
+  "TOTAL BULTOS:                                     20",
+  "FLETE (**):                                    62.00",
+  "SEGURO (**):                                    6.30",
+  "PAIS RECEPTOR Y PAIS DESTINO:                ALEMANIA",
+  "CASO 990087-2",
+  "==============",
+  "DOCUMENTO\t\tNOTA DE CREDITO DE EXPORTACION ELECTRONICA",
+  "REFERENCIA\t\tFACTURA DE EXPORTACION ELECTRONICA CORRESPONDIENTE A CASO 990087-1",
+  "RAZON REFERENCIA\tDEVOLUCION DE MERCADERIA",
+  "ITEM                            CANTIDAD\t",
+  "CHATARRA DE ALUMINIO                 67\t",
+  "EL PRECIO UNITARIO DEL ITEM DEBE SER EL MISMO DE LA FACTURA",
+  "CASO 990087-3",
+  "==============",
+  "DOCUMENTO\t\tNOTA DE DEBITO DE EXPORTACION ELECTRONICA",
+  "REFERENCIA\t\tNOTA DE CREDITO CORRESPONDIENTE A CASO 990087-2",
+  "RAZON REFERENCIA\tANULA NOTA DE CREDITO",
+  "-----------------------------------------------------------------------------------",
+  "(**) VER INSTRUCCIONES AL CONTRIBUYENTE EN SET BASICO FACTURA DE EXPORTACION (2).",
+  "--------------------------------------------------------------------------------",
+  "SET BASICO DOCUMENTOS DE EXPORTACION (2) - NUMERO DE ATENCION: 990088",
+  "CASO 990088-1",
+  "==============",
+  "DOCUMENTO\tFACTURA DE EXPORTACION ELECTRONICA",
+  "ITEM                                    VALOR LINEA",
+  "ASESORIAS Y PROYECTOS PROFESIONALES          71",
+  "REFERENCIA:\t\t\t\t\tRESOLUCION SNA",
+  "MONEDA DE LA OPERACION:\t\t\t\tLIBRA EST",
+  "FORMA DE PAGO EXPORTACION:\t\t\tSIN PAGO",
+  "CLAUSULA DE VENTA DE EXPORTACION:\t\tS/CL",
+  "VIA DE TRANSPORTE:\t\t\t\tMARITIMA, FLUVIAL Y LACUSTRE",
+  "PUERTO DE EMBARQUE:\t\t\t\tPUNTA ARENAS",
+  "PUERTO DE DESEMBARQUE:\t\t\t\tYOKOHAMA",
+  "PAIS RECEPTOR Y PAIS DESTINO:\t\t\tJAPON",
+  "%10 RECARGO EN LA LINEA DE ITEM POR COMISIONES EN EL EXTERIOR",
+  "CASO 990088-2",
+  "==============",
+  "DOCUMENTO\tFACTURA DE EXPORTACION ELECTRONICA",
+  "ITEM                                                    CANTIDAD\tUNIDAD MEDIDA\tPRECIO UNITARIO",
+  "CAJAS CIRUELAS TIERNIZADAS SIN CAROZO CALIBRE 60/70         808\t\tKN\t    171",
+  "CAJAS DE PASAS DE UVA FLAME MORENA SIN SEMILLA MEDIANAS     220\t\tKN\t    112",
+  "REFERENCIA:\t\t\t\t\tDUS",
+  "REFERENCIA:\t\t\t\t\tAWB",
+  "MONEDA DE LA OPERACION:\t\t\t\tLIBRA EST",
+  "FORMA DE PAGO EXPORTACION:\t\t\tSIN PAGO",
+  "MODALIDAD DE VENTA:\t\t\t\tEN CONSIGNACION CON UN MINIMO A FIRME",
+  "CLAUSULA DE VENTA DE EXPORTACION:\t\tS/CL",
+  "TOTAL CLAUSULA DE VENTA:\t\t\t4245.30",
+  "VIA DE TRANSPORTE:\t\t\t\tMARITIMA, FLUVIAL Y LACUSTRE",
+  "PUERTO DE EMBARQUE:\t\t\t\tPUNTA ARENAS",
+  "PUERTO DE DESEMBARQUE:\t\t\t\tYOKOHAMA",
+  "UNIDAD DE MEDIDA DE TARA:\t\t\tPAR",
+  "UNIDAD PESO BRUTO:\t\t\t\tLT",
+  "UNIDAD PESO NETO:\t\t\t\tLT",
+  "TIPO DE BULTO:\t\t\t\t\tROLLOS",
+  "TOTAL BULTOS:\t\t\t\t\t     81",
+  "FLETE (**):\t\t\t\t\t3003.76",
+  "SEGURO (**):\t\t\t\t\t2125.31",
+  "PAIS RECEPTOR Y PAIS DESTINO:\t\t\tJAPON",
+  "COMISIONES EN EL EXTRANJERO (RECARGOS GLOBALES):  11% DEL TOTAL DE LA CLAUSULA",
+  "DESCUENTO LINEA # 1:   5%",
+  "CASO 990088-3",
+  "==============",
+  "DOCUMENTO\tFACTURA DE EXPORTACION ELECTRONICA",
+  "ITEM                            VALOR LINEA",
+  "ALOJAMIENTO HABITACIONES            212",
+  "MONEDA DE LA OPERACION:\t\tDOLAR USA",
+  "NACIONALIDAD:\t\t\tJAPON",
+  "-----------------------------------------------------------------------------------",
+  "INSTRUCCIONES AL CONTRIBUYENTE:",
+  "1.- SE SUPONDRA QUE TODOS LOS DOCUMENTOS DE EXPORTACION SE GENERAN EN EL MISMO",
+  "PERIODO TRIBUTARIO.",
+  "2.- AGREGUE LA INFORMACION OBLIGATORIA DEL DTE: ASIGNE UN FOLIO AUTORIZADO, Y",
+  "AGREGUE OTROS DATOS QUE UD. ESTIME ADECUADOS SEAN NECESARIOS.",
+  "3.- CALCULE LOS VALORES CORRESPONDIENTES DEL ENCABEZADO.",
+  "4.- DEBE ENVIAR EN ENVIOS SEPARADOS EL SET BASICO DOCUMENTOS DE EXPORTACION (1) Y",
+  "EL SET BASICO DOCUMENTOS DE EXPORTACION (2).",
+  "(**) LAS CIFRAS DE FLETE Y SEGURO DEBEN INDICARSE EN LOS CAMPOS INFORMATIVOS",
+  "DEL ENCABEZADO DEFINIDOS PARA ESTOS MONTOS, Y TAMBIEN EN EL AREA DE RECARGO",
+  "COMO DOS LINEAS DISTINTAS DE RECARGOS GLOBALES",
+  "--------------------------------------------------------------------------------",
+].join("\n");
+const estReal = SetParser.generarEstructurasParaScripts(SetParser.extraerCasosDelSet(SET_REAL));
+const EXPO_REAL = { tiposCambio: { "DOLAR USA": 945.12, "LIBRA EST": 1250.5 }, folioReferencia: "1" };
+
+test("formato real: parser sin líneas perdidas, VALOR LINEA, referencias, unidades y nacionalidad", () => {
+  const [a1, a2] = [estReal.setExportacion1.casos, estReal.setExportacion2.casos];
+  for (const c of [...a1, ...a2]) assert.deepEqual(c.noInterpretadas, [], `caso ${c.id}`);
+  assert.deepEqual(a1[0].referenciasExportacion, ["MIC (MANIFIESTO INTERNACIONAL)"]);
+  assert.equal(a1[0].unidadTara, "U");
+  assert.equal(a1[1].referenciaCaso, "990087-1", "la NC sigue apuntando a su caso");
+  assert.deepEqual(a2[0].items, [{ nombre: "ASESORIAS Y PROYECTOS PROFESIONALES", cantidad: 1, precio: 71, unidad: undefined }]);
+  assert.equal(a2[0].recargoLineaPct, 10);
+  assert.deepEqual(a2[1].referenciasExportacion, ["DUS", "AWB"]);
+  assert.deepEqual(a2[1].descuentosLinea, [{ linea: 1, pct: 5 }]);
+  assert.equal(a2[2].nacionalidad, "JAPON");
+});
+
+test("formato real: flete y seguro como recargos, servicios e IndServicio, líneas con % y referencias de Aduana", () => {
+  const p1 = crearSet("exportacion1", CERT, EXPO_REAL).planificar(estReal.setExportacion1);
+  const f = p1[0].datos;
+  assert.deepEqual(f.DscRcgGlobal.map((d) => [d.GlosaDR, d.TpoValor, d.ValorDR]), [["FLETE", "$", 62], ["SEGURO", "$", 6.3]]);
+  assert.equal(f.Encabezado.Totales.MntTotal, 22288.3, "22220 + 62 + 6.30");
+  assert.equal(f.Encabezado.Transporte.Aduana.TotClauVenta, 609.91, "el total cláusula del set, aunque no calce");
+  assert.deepEqual([f.Encabezado.Transporte.Aduana.CodUnidMedTara, f.Encabezado.Transporte.Aduana.CodUnidPesoBruto], [10, 10]);
+  assert.deepEqual(f.Referencia.slice(1).map((r) => [r.TpoDocRef, r.FolioRef]), [[810, "1"]]);
+  assert.equal(p1[1].datos.Encabezado.Totales.MntTotal, 7370, "la NC por devolución no repite flete ni seguro");
+
+  const p2 = crearSet("exportacion2", CERT, EXPO_REAL).planificar(estReal.setExportacion2);
+  const [s1, s2, s3] = p2.map((p) => p.datos);
+  assert.equal(s1.Encabezado.IdDoc.IndServicio, 3);
+  assert.equal(s1.Encabezado.Transporte.Aduana.CodModVenta, undefined, "servicios: sin modalidad inventada");
+  assert.deepEqual(s1.Detalle[0], { NroLinDet: 1, IndExe: 1, NmbItem: "ASESORIAS Y PROYECTOS PROFESIONALES", QtyItem: 1, PrcItem: 71, RecargoPct: 10, RecargoMonto: 7, MontoItem: 78 });
+  assert.equal(s1.Referencia[1].TpoDocRef, 812);
+  assert.equal(s2.Detalle[0].DescuentoPct, 5);
+  assert.equal(s2.Detalle[1].DescuentoPct, undefined, "el descuento es solo de la línea 1");
+  assert.deepEqual(s2.Referencia.slice(1).map((r) => r.TpoDocRef), [807, 809]);
+  assert.deepEqual(s2.DscRcgGlobal.map((d) => d.GlosaDR), ["COMISIONES EN EL EXTRANJERO", "FLETE", "SEGURO"]);
+  assert.equal(s3.Encabezado.IdDoc.IndServicio, 4, "alojamiento con nacionalidad: hotelería");
+  assert.equal(s3.Encabezado.Receptor.Extranjero.Nacionalidad, 331);
+  assert.equal(s3.Encabezado.Transporte, undefined);
+
+  assert.throws(() => crearSet("exportacion2", CERT, { tiposCambio: EXPO_REAL.tiposCambio }).planificar(estReal.setExportacion2),
+    /folioReferencia/, "el número del documento de Aduana no se inventa");
+});
