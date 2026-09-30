@@ -8,6 +8,41 @@ Versionado [SemVer](https://semver.org/lang/es/).
 <!-- Los PRs agregan aca, sin elegir numero de version. Al publicar, esta seccion
      pasa a ser una version numerada con su fecha. Ver CONTRIBUTING.md. -->
 
+### Agregado
+
+- **Documentos de exportación (110, 111, 112) y sus sets de certificación.** `DTE` arma el
+  documento dentro de `<Exportaciones>` (la rama de DTE_v10.xsd para esos tipos) y acepta
+  `Encabezado.OtraMoneda`; `normalizeReceptor` conserva `Extranjero` (antes lo descartaba).
+  Nuevo `cert/SetExportacion.js` y `CertRunner.ejecutarSetExportacion1/2()`, con los dos sets
+  en `SETS_DE_CORRIDA`, en la declaración de avance, en la de libros y en la espera de
+  aprobación. Nuevos `utils/aduana.js` (tablas de Aduana y `resolverCodigoAduana`,
+  `resolverMonedaSii`) y `utils/exportacion.js` (`buildDetalleExportacion`,
+  `buildDscRcgGlobalExportacion`, `calcularTotalesExportacion`, `buildTransporteExportacion`).
+  El tipo de cambio y el receptor extranjero se reciben por configuración: sin ellos, lanza.
+- `generarSetPruebas({ incluirBasico: false })` (y el mismo parámetro en `SetsProvider.obtenerSets`
+  y `CertRunner.obtenerSets`) no marca el SET01, que hasta ahora se pedía siempre. Por defecto
+  sigue marcándolo. Pensado para una empresa ya autorizada que certifica documentos nuevos;
+  no está probado todavía contra el portal.
+- `MuestrasImpresas` imprime en exportación moneda, tipo de cambio, país receptor y destino,
+  puertos, bultos, cláusula, vía, flete y seguro, y los montos sin "$" en la moneda del set.
+
+### Corregido
+
+- **`SetParser`: cláusula y país de exportación salían con parte de la etiqueta**
+  ("EXPORTACION: FOB", "PAIS DESTINO: ARGENTINA"), los precios de exportación perdían los
+  decimales (`parseInt`) y un set de exportación sin "(1)" en el nombre se descartaba entero.
+  El `cafRequired` de exportación ya no incluye tipos con 0 casos. Cada caso guarda en
+  `noInterpretadas` las líneas que ningún patrón reconoció.
+- **`SiiCertificacion.waitForApproval` daba por aprobado un set que la página no mostraba**:
+  un set pedido sin patrón en `ESTADO_PATTERNS` quedaba fuera y `every()` sobre la lista vacía
+  devolvía `true` en el primer intento. Ahora sigue esperando. Se agregan los patrones de los
+  dos sets de exportación, y los de `declararAvance` toleran el espacio antes de "(2)".
+  Si el tiempo se agota con sets que la página nunca mostró, el resultado trae `sinEstado`.
+- `CertRunner._cafsDelPlan` exigía CAF para tipos con 0 casos en el plan del set.
+- `MuestrasImpresas.generarMuestras` clasificaba los envíos de exportación como simulación.
+- `DTE.firmar` lanza si no encuentra dónde insertar la firma, en vez de devolver el documento
+  sin ella.
+
 ## [2.31.1] - 2026-09-30
 
 ### Agregado

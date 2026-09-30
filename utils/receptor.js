@@ -129,10 +129,15 @@ function normalizeReceptor(receptor, esBoleta = false) {
     ? sanitizeGiroRecep(receptor.GiroRecep)
     : undefined;
 
+  // Receptor extranjero (documentos de exportación): va justo después de RznSocRecep, con sus
+  // hijos en el orden del XSD. Antes se descartaba en silencio.
+  const extranjero = normalizeExtranjero(receptor.Extranjero);
+
   return {
     RUTRecep:    receptor.RUTRecep,
     ...(receptor.CdgIntRecep ? { CdgIntRecep: receptor.CdgIntRecep } : {}),
     RznSocRecep: sanitizeSiiText(receptor.RznSocRecep),
+    ...(extranjero ? { Extranjero: extranjero } : {}),
     ...(giroRecep ? { GiroRecep: giroRecep } : {}),
     ...(receptor.Contacto   ? { Contacto:    receptor.Contacto }                   : {}),
     ...(receptor.CorreoRecep ? { CorreoRecep: receptor.CorreoRecep }               : {}),
@@ -140,6 +145,27 @@ function normalizeReceptor(receptor, esBoleta = false) {
     CmnaRecep:   receptor.CmnaRecep,
     ...(receptor.CiudadRecep ? { CiudadRecep: receptor.CiudadRecep } : {}),
   };
+}
+
+/**
+ * Sub-área `Extranjero` del receptor, en el orden de DTE_v10.xsd: NumId, Nacionalidad,
+ * IdAdicRecep. Devuelve null si no trae ninguno de los tres.
+ *
+ * @param {Object} [extranjero]
+ * @param {string} [extranjero.NumId] - Identificación tributaria extranjera (máx. 20)
+ * @param {string|number} [extranjero.Nacionalidad] - Código de país de Aduana (máx. 3)
+ * @param {string} [extranjero.IdAdicRecep] - Identificador adicional (máx. 20)
+ * @returns {Object|null}
+ */
+function normalizeExtranjero(extranjero) {
+  if (!extranjero || typeof extranjero !== 'object') return null;
+  const out = {};
+  if (extranjero.NumId) out.NumId = sanitizeSiiText(String(extranjero.NumId));
+  if (extranjero.Nacionalidad !== undefined && extranjero.Nacionalidad !== null && extranjero.Nacionalidad !== '') {
+    out.Nacionalidad = String(extranjero.Nacionalidad);
+  }
+  if (extranjero.IdAdicRecep) out.IdAdicRecep = sanitizeSiiText(String(extranjero.IdAdicRecep));
+  return Object.keys(out).length ? out : null;
 }
 
 /**

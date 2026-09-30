@@ -169,6 +169,10 @@ const constants = require('./constants');
 // PFX Loader
 const pfx = require('./pfx');
 
+// Exportación (110, 111, 112): tablas de Aduana y piezas del documento
+const aduana = require('./aduana');
+const exportacion = require('./exportacion');
+
 // ============================================
 // EXPORTS
 // ============================================
@@ -340,4 +344,12 @@ module.exports = {
   // ─────────────────────────────────────────
   pfx,
   ...pfx,
+
+  // ─────────────────────────────────────────
+  // Exportación (110, 111, 112)
+  // ─────────────────────────────────────────
+  aduana,
+  resolverCodigoAduana: aduana.resolverCodigo,
+  resolverMonedaSii: aduana.resolverMoneda,
+  ...exportacion,
 };

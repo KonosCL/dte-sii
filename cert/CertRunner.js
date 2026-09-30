@@ -33,6 +33,7 @@ const SetBasico = require('./SetBasico');
 const SetGuia = require('./SetGuia');
 const SetExenta = require('./SetExenta');
 const SetCompra = require('./SetCompra');
+const SetExportacion = require('./SetExportacion');
 
 // Libros (Fase 4)
 const LibroVentas = require('./LibroVentas');
@@ -77,6 +78,13 @@ const CAF_POR_SET = {
   guia:   (setData) => ({ 52: setData?.casos?.length || 3 }),
   exenta: { 34: 3, 56: 1, 61: 4 },
   compra: { 46: 1, 56: 1, 61: 1 },
+  // Exportación: un folio por caso de cada tipo. Sin casos no se pide nada: no hay un
+  // número "típico" como en los otros sets, y un folio de más sin usar raciona el timbraje.
+  exportacion: (setData) => {
+    const plan = {};
+    for (const c of setData?.casos || []) plan[c.tipoDTE] = (plan[c.tipoDTE] || 0) + 1;
+    return plan;
+  },
 };
 
 /** Nombre de la estructura y su plan de CAF, en el orden en que se ejecutan los sets. */
@@ -85,6 +93,9 @@ const SETS_DE_CORRIDA = [
   ['guia',   'setGuiaDespacho',  CAF_POR_SET.guia],
   ['exenta', 'setFacturaExenta', CAF_POR_SET.exenta],
   ['compra', 'setFacturaCompra', CAF_POR_SET.compra],
+  // El SII entrega dos sets de exportación; cada uno se envía y se declara por separado.
+  ['exportacion1', 'setExportacion1', CAF_POR_SET.exportacion],
+  ['exportacion2', 'setExportacion2', CAF_POR_SET.exportacion],
 ];
 
 class CertRunner {
@@ -253,6 +264,7 @@ class CertRunner {
         SET72: 'S',  // SET CASO GENERAL FACTURA COMPRA
       },
       forceRefresh: true,  // siempre fresco — nunca reusar caché de ejecuciones anteriores
+      incluirBasico: options.incluirBasico,
     });
 
     if (!resultado.success) {
@@ -380,7 +392,9 @@ class CertRunner {
    */
   _cafsDelPlan(cafRequired, nombreSet) {
     const cafs = {};
-    for (const tipoDte of Object.keys(cafRequired)) {
+    for (const [tipoDte, cantidad] of Object.entries(cafRequired)) {
+      // Un tipo con 0 casos no emite nada: no se le exige CAF (el parser deja ceros en algunos sets).
+      if (!Number(cantidad)) continue;
       const cafPath = this._cafsPrecargados[tipoDte];
       if (!cafPath) {
         throw new Error(
@@ -972,7 +986,7 @@ class CertRunner {
    * Ejecuta un set genérico — toda la lógica común entre los 4 sets.
    * @private
    */
-  async _ejecutarSet(ClaseSet, estructuraKey, resultadoKey, cafFallback, enviadorNombre, casosExterno) {
+  async _ejecutarSet(ClaseSet, estructuraKey, resultadoKey, cafFallback, enviadorNombre, casosExterno, depsExtra = {}) {
     const setData = casosExterno || this._estructuras?.[estructuraKey];
     if (!setData) {
       throw new Error(`No hay casos para ${ClaseSet.name}. Ejecutar obtenerSets() primero.`);
@@ -998,10 +1012,14 @@ class CertRunner {
           fecha: this.config.emisor.fch_resol,
           numero: this.config.emisor.nro_resol,
         },
+        // Solo los usa SetExportacion; los demás sets los ignoran.
+        receptorExtranjero: this.config.receptorExtranjero,
+        exportacion: this.config.exportacion,
       },
       cafManager: { ensureCaf: ({ tipoDte }) => cafs[tipoDte] },
       folioHelper: this.folioHelper,
       enviador: this._createEnviador(enviadorNombre),
+      ...depsExtra,
     });
 
     // Un folio NO se reutiliza nunca. Se marca el CAF apenas se intentó enviar, sin mirar
@@ -1055,6 +1073,28 @@ class CertRunner {
     const r = await this._ejecutarSet(SetCompra, 'setFacturaCompra', 'compra', CAF_POR_SET.compra, 'compra', casos);
     if (r.success) emitProgress(STEPS.SET_OK, { set: 'compra', trackId: r.trackId });
     else emitProgress(STEPS.SET_ERROR, { set: 'compra', error: r.error });
+    return r;
+  }
+
+  /**
+   * Primer set de exportación ("SET DOCUMENTOS DE EXPORTACION"). Requiere en la config
+   * `receptorExtranjero` y `exportacion.tiposCambio` (ver SetExportacion).
+   */
+  async ejecutarSetExportacion1(casos) {
+    return this._ejecutarSetExportacion('exportacion1', 'setExportacion1', casos);
+  }
+
+  /** Segundo set de exportación ("SET DOCUMENTOS DE EXPORTACION(2)"). */
+  async ejecutarSetExportacion2(casos) {
+    return this._ejecutarSetExportacion('exportacion2', 'setExportacion2', casos);
+  }
+
+  /** @private */
+  async _ejecutarSetExportacion(nombre, estructuraKey, casos) {
+    emitProgress(STEPS.SET_START, { set: nombre });
+    const r = await this._ejecutarSet(SetExportacion, estructuraKey, nombre, CAF_POR_SET.exportacion, nombre, casos, { key: nombre });
+    if (r.success) emitProgress(STEPS.SET_OK, { set: nombre, trackId: r.trackId });
+    else emitProgress(STEPS.SET_ERROR, { set: nombre, error: r.error });
     return r;
   }
 
@@ -1182,6 +1222,9 @@ class CertRunner {
       'SET GUIA DE DESPACHO': 'setGuiaDespacho',
       'SET FACTURA EXENTA': 'setFacturaExenta',
       'SET CASO GENERAL FACTURA COMPRA': 'setFacturaCompra',
+      'SET DOCUMENTOS DE EXPORTACION': 'setExportacion1',
+      'SET DOCUMENTOS DE EXPORTACION(2)': 'setExportacion2',
+      'SET DOCUMENTOS DE EXPORTACION (2)': 'setExportacion2',
       'SET DE SIMULACION': 'setSimulacion',
       'LIBRO DE VENTAS': 'libroVentas',
       'LIBRO DE COMPRAS': 'libroCompras',
@@ -1313,6 +1356,8 @@ class CertRunner {
       guia: 'setGuiaDespacho',
       exenta: 'setFacturaExenta',
       compra: 'setFacturaCompra',
+      exportacion1: 'setExportacion1',
+      exportacion2: 'setExportacion2',
     };
 
     for (const [resKey, setKey] of Object.entries(mapping)) {
@@ -1352,7 +1397,10 @@ class CertRunner {
     const setsAEsperar = sets || Object.entries(this.resultados)
       .filter(([_, r]) => r?.trackId)
       .map(([k]) => {
-        const mapping = { basico: 'setBasico', guia: 'setGuiaDespacho', exenta: 'setFacturaExenta', compra: 'setFacturaCompra' };
+        const mapping = {
+          basico: 'setBasico', guia: 'setGuiaDespacho', exenta: 'setFacturaExenta', compra: 'setFacturaCompra',
+          exportacion1: 'setExportacion1', exportacion2: 'setExportacion2',
+        };
         return mapping[k];
       })
       .filter(Boolean);
@@ -2112,6 +2160,8 @@ class CertRunner {
       guia: 'setGuiaDespacho',
       exenta: 'setFacturaExenta',
       compra: 'setFacturaCompra',
+      exportacion1: 'setExportacion1',
+      exportacion2: 'setExportacion2',
       // Libros
       libroVentas: 'libroVentas',
       libroCompras: 'libroCompras',

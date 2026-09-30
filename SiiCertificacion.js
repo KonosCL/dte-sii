@@ -202,6 +202,8 @@ class SiiCertificacion {
    * @param {Object} options - Opciones
    * @param {boolean} options.descargar - Si true, descarga el set (envía formulario)
    * @param {Object} options.setsOpcionales - Sets opcionales a incluir {SET03: 'S', SET06: 'S', etc}
+   * @param {boolean} [options.incluirBasico=true] - false no marca SET01. Para una empresa ya
+   *   autorizada que certifica documentos nuevos; sin verificar todavía contra el portal.
    * @returns {Promise<Object>} Información del set generado
    */
   async generarSetPruebas(options = {}) {
@@ -278,8 +280,9 @@ class SiiCertificacion {
             formData[set.id] = 'S';
           }
         }
-        // SET01 (básico) siempre incluido aunque no aparezca como checkbox opcional
-        formData.SET01 = 'S';
+        // SET01 (básico) incluido aunque no aparezca como checkbox opcional, salvo que el
+        // llamador lo excluya explícitamente.
+        if (options.incluirBasico !== false) formData.SET01 = 'S';
         
         const genResponse = await this.session.submitForm(
           '/cvc_cgi/dte/pe_generar2',
@@ -676,8 +679,10 @@ class SiiCertificacion {
         { name: 'setBasico', label: /SET BASICO/i },
         { name: 'setGuiaDespacho', label: /SET GUIA DE DESPACHO/i },
         { name: 'setFacturaExenta', label: /SET FACTURA EXENTA/i },
-        { name: 'setExportacion1', label: /SET DOCUMENTOS DE EXPORTACION(?!\(2\))/i },
-        { name: 'setExportacion2', label: /SET DOCUMENTOS DE EXPORTACION\(2\)/i },
+        // Con o sin espacio antes del "(2)": el primer patrón no puede tomar la fila del segundo
+        // set, porque la búsqueda se queda con la primera fila que calza.
+        { name: 'setExportacion1', label: /SET DOCUMENTOS DE EXPORTACION(?!\s*\(2\))/i },
+        { name: 'setExportacion2', label: /SET DOCUMENTOS DE EXPORTACION\s*\(2\)/i },
         { name: 'setFacturaCompra', label: /SET CASO GENERAL FACTURA COMPRA/i },
         { name: 'setLiquidacion', label: /SET LIQUIDACION FACTURA/i },
       ];
@@ -1453,6 +1458,10 @@ class SiiCertificacion {
       setGuiaDespacho: { nombre: 'SET GUIA DESPACHO', regex: /SET GUIA[\s\S]*?DESP[\s\S]*?<b>([^<]+)<\/b>/i },
       setFacturaExenta: { nombre: 'SET FACTURA EXENTA', regex: /SET FACTURA EXENTA[\s\S]*?<b>([^<]+)<\/b>/i },
       setFacturaCompra: { nombre: 'SET FACTURA COMPRA', regex: /SET CASO GENERAL FACTURA COMPRA[\s\S]*?<b>([^<]+)<\/b>/i },
+      // Sin estos dos, waitForApproval(['setExportacion1']) no encontraba ningún estado y
+      // daba el set por aprobado en el primer intento (every() de una lista vacía es true).
+      setExportacion1: { nombre: 'SET DOCUMENTOS DE EXPORTACION', regex: /SET DOCUMENTOS DE EXPORTACION(?!\s*\(2\))[\s\S]*?<b>([^<]+)<\/b>/i },
+      setExportacion2: { nombre: 'SET DOCUMENTOS DE EXPORTACION(2)', regex: /SET DOCUMENTOS DE EXPORTACION\s*\(2\)[\s\S]*?<b>([^<]+)<\/b>/i },
       setSimulacion: { nombre: 'SET SIMULACION', regex: /SET(?:\s+DE)?\s+SIMULACION[\s\S]*?<b>([^<]+)<\/b>/i },
       libroVentas: { nombre: 'LIBRO VENTAS', regex: /LIBRO[\s\S]*?VENTA[\s\S]*?<b>([^<]+)<\/b>/i },
       libroCompras: { nombre: 'LIBRO COMPRAS', regex: /LIBRO DE COMPRAS(?!\s+PARA EXENTOS)[\s\S]*?<b>([^<]+)<\/b>/i },
@@ -1576,6 +1585,7 @@ class SiiCertificacion {
     // solo posterga descubrirlo.
     const { maxIntentos = 5, intervalo = 10000, onProgress } = options;
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    let sinEstado = [];
 
     for (let intento = 1; intento <= maxIntentos; intento++) {
       await sleep(intervalo);
@@ -1595,7 +1605,11 @@ class SiiCertificacion {
           )
         : result.estados;
 
-      const todosConformes = Object.values(estadosRelevantes).every(e => e.esConforme);
+      // Un set pedido que la página no muestra NO está aprobado: antes quedaba fuera de
+      // `estadosRelevantes` y, si era el único, every() sobre una lista vacía lo daba por
+      // conforme (pasaba con los sets de exportación, que no tenían patrón).
+      sinEstado = setsAEsperar.filter((key) => !result.estados[key]);
+      const todosConformes = !sinEstado.length && Object.values(estadosRelevantes).every(e => e.esConforme);
       // `datoInconsistente` cuenta como rechazo: seguir esperando no lo arregla.
       const algunoRechazado = Object.values(estadosRelevantes)
         .some(e => e.esRechazado || e.datoInconsistente);
@@ -1637,7 +1651,9 @@ class SiiCertificacion {
       }
     }
 
-    return { success: false, timedOut: true };
+    // `sinEstado`: sets pedidos que la página nunca mostró. Si no queda vacío, el patrón del
+    // set no calza con el portal (revisar la página de avance), no es que el SII tarde.
+    return { success: false, timedOut: true, ...(sinEstado.length ? { sinEstado } : {}) };
   }
 }
 

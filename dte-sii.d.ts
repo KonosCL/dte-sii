@@ -53,9 +53,34 @@ export interface Emisor {
 export interface Receptor {
   RUTRecep: string;
   RznSocRecep: string;
+  /** Solo documentos de exportación: identificación del receptor extranjero. */
+  Extranjero?: ReceptorExtranjero;
   GiroRecep?: string;
   DirRecep: string;
   CmnaRecep: string;
+  CiudadRecep?: string;
+  CorreoRecep?: string;
+}
+
+/** Sub-área `Extranjero` del receptor (DTE_v10.xsd). */
+export interface ReceptorExtranjero {
+  /** Identificación tributaria extranjera (máx. 20). */
+  NumId?: string;
+  /** Código de país de la tabla de Aduana (máx. 3). */
+  Nacionalidad?: string | number;
+  IdAdicRecep?: string;
+}
+
+/**
+ * Receptor de un documento de exportación: RUT 55555555-5 y sin comuna chilena (el XSD de
+ * exportación deja CmnaRecep y DirRecep opcionales).
+ */
+export interface ReceptorExportacion {
+  RUTRecep: string;
+  RznSocRecep: string;
+  Extranjero?: ReceptorExtranjero;
+  GiroRecep?: string;
+  DirRecep?: string;
   CiudadRecep?: string;
   CorreoRecep?: string;
 }
@@ -103,6 +128,112 @@ export interface DscRcgGlobal {
   GlosaDR: string;
   TpoValor: '%' | '$';
   ValorDR: number;
+}
+
+// ============================================
+// EXPORTACIÓN (110, 111, 112)
+// ============================================
+
+/** Totales de exportación: todo en la moneda de la operación y todo exento. */
+export interface TotalesExportacion {
+  /** Glosa de TipMonType, ej. "DOLAR USA". */
+  TpoMoneda: string;
+  MntExe: number;
+  MntTotal: number;
+}
+
+/** Equivalente en pesos, obligatorio en exportación. */
+export interface OtraMoneda {
+  TpoMoneda: string;
+  TpoCambio?: number;
+  MntExeOtrMnda?: number;
+  MntTotOtrMnda: number;
+}
+
+export interface TipoBultoExportacion {
+  CodTpoBultos?: number;
+  CantBultos?: number;
+  Marcas?: string;
+  IdContainer?: string;
+  Sello?: string;
+  EmisorSello?: string;
+}
+
+/** Hijos de <Aduana>. Ninguno es obligatorio en el XSD; los exige el formato del SII según el caso. */
+export interface AduanaExportacion {
+  CodModVenta?: number;
+  CodClauVenta?: number;
+  TotClauVenta?: number;
+  CodViaTransp?: number;
+  NombreTransp?: string;
+  RUTCiaTransp?: string;
+  NomCiaTransp?: string;
+  IdAdicTransp?: string;
+  Booking?: string;
+  Operador?: string;
+  CodPtoEmbarque?: number;
+  IdAdicPtoEmb?: string;
+  CodPtoDesemb?: number;
+  IdAdicPtoDesemb?: string;
+  Tara?: number;
+  CodUnidMedTara?: number;
+  PesoBruto?: number;
+  CodUnidPesoBruto?: number;
+  PesoNeto?: number;
+  CodUnidPesoNeto?: number;
+  TotItems?: number;
+  TotBultos?: number;
+  TipoBultos?: TipoBultoExportacion[];
+  MntFlete?: number;
+  MntSeguro?: number;
+  CodPaisRecep?: number;
+  CodPaisDestin?: number;
+}
+
+export interface TransporteExportacion {
+  Patente?: string;
+  RUTTrans?: string;
+  Chofer?: { RUTChofer: string; NombreChofer: string };
+  DirDest?: string;
+  CmnaDest?: string;
+  CiudadDest?: string;
+  Aduana?: AduanaExportacion;
+}
+
+export interface DscRcgGlobalExportacion {
+  NroLinDR: number;
+  TpoMov: 'D' | 'R';
+  GlosaDR?: string;
+  TpoValor: '%' | '$';
+  ValorDR: number;
+  IndExeDR: 1;
+}
+
+export interface ItemExportacion {
+  nombre: string;
+  cantidad?: number;
+  precio?: number;
+  unidad?: string;
+  descuentoPct?: number;
+}
+
+export type TablaAduana =
+  | 'formaPago' | 'modalidadVenta' | 'clausulaVenta' | 'viaTransporte'
+  | 'tipoBulto' | 'unidad' | 'pais' | 'puerto';
+
+export interface ResolverCodigoOpciones {
+  /** Texto del set (se normaliza) → código. Para lo que la tabla no resuelve. */
+  overrides?: Record<string, number>;
+  /** Desempate cuando el texto calza con varios códigos. */
+  preferir?: (codigo: number) => boolean;
+  /** Nombre del campo, para el mensaje de error. */
+  campo?: string;
+}
+
+export interface CodigoAduana {
+  codigo: number;
+  glosa: string;
+  via: 'override' | 'codigo' | 'glosa' | 'alias' | 'prefijo';
 }
 
 // ============================================
@@ -453,6 +584,8 @@ export const TIPOS_DTE: {
 
 export const TIPOS_BOLETA: number[];
 export const TIPOS_EXENTOS: number[];
+/** 110, 111, 112: documentos de exportación. */
+export const TIPOS_EXPORTACION: number[];
 export const NOMBRES_DTE: Record<number, string>;
 export const TASA_IVA: number;
 export const IDK_CERTIFICACION: number;
@@ -513,11 +646,14 @@ export interface DteDatos {
       [key: string]: any;
     };
     Emisor: Emisor;
-    Receptor: Receptor;
-    Totales: Totales;
+    Receptor: Receptor | ReceptorExportacion;
+    Transporte?: TransporteExportacion | Record<string, unknown>;
+    Totales: Totales | TotalesExportacion;
+    /** Obligatorio en exportación (110, 111, 112): los montos en pesos. */
+    OtraMoneda?: OtraMoneda;
   };
   Detalle?: DetalleItem[];
-  DscRcgGlobal?: DscRcgGlobal[];
+  DscRcgGlobal?: Array<DscRcgGlobal | DscRcgGlobalExportacion>;
   Referencia?: Referencia[];
 }
 
@@ -537,6 +673,8 @@ export interface DteSimplificado {
 export class DTE {
   datos: DteDatos;
   montoTotal: number;
+  /** Elemento que envuelve el documento: <Exportaciones> para 110, 111 y 112. */
+  elementoDocumento: 'Documento' | 'Exportaciones';
   fechaEmision: string | undefined;
   xml: string | null;
   tedXml: string | null;
@@ -1091,7 +1229,38 @@ export function esConsumidorFinal(receptor: Partial<Receptor>): boolean;
 export function esBoleta(tipoDte: number): boolean;
 export function esExento(tipoDte: number): boolean;
 export function esNota(tipoDte: number): boolean;
+export function esExportacion(tipoDte: number): boolean;
 export function getNombreDte(tipoDte: number, corto?: boolean): string;
+
+// Exportación (110, 111, 112)
+/** Código de Aduana de un texto del set. Lanza si no es inequívoco. */
+export function resolverCodigoAduana(tabla: TablaAduana, texto: string | number, opciones?: ResolverCodigoOpciones): CodigoAduana;
+/** Glosa de TipMonType para un texto del set ("DOLAR", "USD" → "DOLAR USA"). Lanza si no la reconoce. */
+export function resolverMonedaSii(texto: string, opciones?: { overrides?: Record<string, string> }): string;
+/** Tablas de Aduana (código → glosa) y la enumeración de monedas del SII. */
+export const aduana: {
+  FORMAS_PAGO: Readonly<Record<number, string>>;
+  MODALIDADES_VENTA: Readonly<Record<number, string>>;
+  CLAUSULAS_VENTA: Readonly<Record<number, string>>;
+  VIAS_TRANSPORTE: Readonly<Record<number, string>>;
+  TIPOS_BULTO: Readonly<Record<number, string>>;
+  UNIDADES: Readonly<Record<number, string>>;
+  PAISES: Readonly<Record<number, string>>;
+  PUERTOS: Readonly<Record<number, string>>;
+  MONEDAS_SII: readonly string[];
+  normalizarGlosa(texto: unknown): string;
+  resolverCodigo: typeof resolverCodigoAduana;
+  resolverMoneda: typeof resolverMonedaSii;
+  esPuertoChileno(codigo: number): boolean;
+};
+export function buildDetalleExportacion(items: ItemExportacion[], opciones: { moneda: string }): DetalleItem[];
+export function buildDscRcgGlobalExportacion(movimientos?: Array<{ tipo: 'D' | 'R'; valor: number; enPorcentaje?: boolean; glosa?: string }>): DscRcgGlobalExportacion[];
+export function calcularTotalesExportacion(
+  detalle: DetalleItem[],
+  dscRcg: DscRcgGlobalExportacion[] | undefined,
+  opciones: { moneda: string; tipoCambio: number },
+): { Totales: TotalesExportacion; OtraMoneda: OtraMoneda };
+export function buildTransporteExportacion(transporte?: TransporteExportacion): TransporteExportacion | null;
 export function esTipoValido(tipoDte: number): boolean;
 
 // Endpoints SII
@@ -1229,8 +1398,18 @@ export const utils: {
   esBoleta: typeof esBoleta;
   esExento: typeof esExento;
   esNota: typeof esNota;
+  esExportacion: typeof esExportacion;
   getNombreDte: typeof getNombreDte;
   esTipoValido: typeof esTipoValido;
+
+  TIPOS_EXPORTACION: typeof TIPOS_EXPORTACION;
+  aduana: typeof aduana;
+  resolverCodigoAduana: typeof resolverCodigoAduana;
+  resolverMonedaSii: typeof resolverMonedaSii;
+  buildDetalleExportacion: typeof buildDetalleExportacion;
+  buildDscRcgGlobalExportacion: typeof buildDscRcgGlobalExportacion;
+  calcularTotalesExportacion: typeof calcularTotalesExportacion;
+  buildTransporteExportacion: typeof buildTransporteExportacion;
 
   TIPOS_DTE: typeof TIPOS_DTE;
   TIPOS_BOLETA: typeof TIPOS_BOLETA;

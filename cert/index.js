@@ -8,7 +8,7 @@
  * 
  * Componentes:
  * - CertRunner: Orquestador del proceso completo
- * - Sets: SetBasico, SetExenta, SetGuia, SetCompra
+ * - Sets: SetBasico, SetExenta, SetGuia, SetCompra, SetExportacion
  * - Libros: LibroVentasCert, LibroComprasCert, LibroGuiasCert
  * - Simulacion: Etapa 2 del proceso
  * 
@@ -44,6 +44,7 @@ const SetBasico = require('./SetBasico');
 const SetGuia = require('./SetGuia');
 const SetExenta = require('./SetExenta');
 const SetCompra = require('./SetCompra');
+const SetExportacion = require('./SetExportacion');
 
 // ═══════════════════════════════════════════════════════════════
 // LIBROS (Fase 4) ✅
@@ -104,6 +105,7 @@ module.exports = {
   SetGuia,
   SetExenta,
   SetCompra,
+  SetExportacion,
   
   // Libros (Fase 4) ✅
   LibroVentas,

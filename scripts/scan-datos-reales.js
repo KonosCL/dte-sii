@@ -49,6 +49,10 @@ const RUTS_PERMITIDOS = new Set([
   // del dominio, el que lleva una boleta sin receptor identificado. Vive en
   // utils/constants.js como RUT_CONSUMIDOR_FINAL y es el default de DTE.js.
   '66666666-6',
+  // RUT generico del receptor extranjero en documentos de exportacion (110, 111, 112).
+  // Tampoco es un ejemplo: el formato DTE del SII lo exige ("En doctos. Exportac.
+  // 55.555.555-5") y vive en cert/SetExportacion.js como RUT_RECEPTOR_EXTRANJERO.
+  '55555555-5',
   // IDs de caso de los sets de certificacion: coinciden con el patron de RUT
   // sin serlo. El SII los numera "CASO 4668070-1".
   '4668070-1', '4670590-1',

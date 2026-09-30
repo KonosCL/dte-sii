@@ -132,6 +132,43 @@ function determinarTpoDespacho(trasladoPor) {
 }
 
 /**
+ * Número escrito en un set del SII, con o sin decimales. Los sets de exportación traen
+ * precios y montos en moneda extranjera con decimales ("12.5", "12,5", "1.234,56"); el resto
+ * de los sets usa enteros y sigue leyéndose con parseInt. Si aparecen coma y punto, el que va
+ * último es el separador decimal; una coma sola es decimal (formato chileno); un punto solo
+ * también se lee como decimal, porque los sets no usan separador de miles.
+ *
+ * @param {string} texto
+ * @returns {number} NaN si no hay número
+ */
+function numeroDelSet(texto) {
+  let s = String(texto ?? '').trim().replace(/[^\d.,-]/g, '');
+  if (!/\d/.test(s)) return NaN;
+  const coma = s.lastIndexOf(',');
+  const punto = s.lastIndexOf('.');
+  if (coma > -1 && punto > -1) {
+    s = coma > punto ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  } else if (coma > -1) {
+    s = s.replace(/,/g, '.');
+  }
+  return parseFloat(s);
+}
+
+/**
+ * Valor de una línea "ETIQUETA: valor" del set. Sin dos puntos, el valor es la última
+ * columna (el set separa columnas con tabuladores o varios espacios).
+ * @param {string} linea
+ * @returns {string}
+ */
+function valorDeCampo(linea) {
+  const texto = String(linea || '').trim();
+  const i = texto.indexOf(':');
+  if (i > -1) return texto.slice(i + 1).trim();
+  const partes = texto.split(/\t+|\s{2,}/).map((p) => p.trim()).filter(Boolean);
+  return partes.length > 1 ? partes[partes.length - 1] : '';
+}
+
+/**
  * Mapea tipo documento de texto a código SII
  */
 function mapearTipoDocLibro(tipo) {
@@ -258,7 +295,11 @@ function extraerCasosDelSet(texto) {
         seguro: null,
         paisDestino: null,
         comisionExtranjero: null,
+        tipoCambio: null,
         raw: [],
+        // Líneas del caso que ningún patrón reconoció. En los sets conocidos queda vacío; si
+        // el SII agrega un dato nuevo (pasó con exportación), aparece acá en vez de perderse.
+        noInterpretadas: [],
       };
       enCabecera = true;
       continue;
@@ -342,15 +383,16 @@ function extraerCasosDelSet(texto) {
         continue;
       }
 
-      const matchClausula = lineaTrim.match(/^CLAUSULA\s+DE\s+VENTA.+?[:\s]+(.+)$/i);
-      if (matchClausula) {
-        casoActual.clausulaVenta = matchClausula[1].trim();
+      // "CLAUSULA DE VENTA DE EXPORTACION: FOB". El patrón anterior (VENTA.+?[:\s]+) cortaba
+      // en el primer espacio y dejaba "EXPORTACION: FOB" como cláusula.
+      if (/^CLAUSULA\s+DE\s+VENTA/i.test(lineaTrim)) {
+        casoActual.clausulaVenta = valorDeCampo(lineaTrim);
         continue;
       }
 
       const matchTotalClausula = lineaTrim.match(/^TOTAL\s+CLAUSULA\s+DE\s+VENTA[:\s]+(.+)$/i);
       if (matchTotalClausula) {
-        casoActual.totalClausula = parseFloat(matchTotalClausula[1].trim());
+        casoActual.totalClausula = numeroDelSet(matchTotalClausula[1]);
         continue;
       }
 
@@ -386,25 +428,34 @@ function extraerCasosDelSet(texto) {
 
       const matchFlete = lineaTrim.match(/^FLETE[^:]*[:\s]+(.+)$/i);
       if (matchFlete) {
-        casoActual.flete = parseFloat(matchFlete[1].trim());
+        casoActual.flete = numeroDelSet(matchFlete[1]);
         continue;
       }
 
       const matchSeguro = lineaTrim.match(/^SEGURO[^:]*[:\s]+(.+)$/i);
       if (matchSeguro) {
-        casoActual.seguro = parseFloat(matchSeguro[1].trim());
+        casoActual.seguro = numeroDelSet(matchSeguro[1]);
         continue;
       }
 
-      const matchPais = lineaTrim.match(/^PAIS\s+RECEPTOR.+?[:\s]+(.+)$/i);
-      if (matchPais) {
-        casoActual.paisDestino = matchPais[1].trim();
+      // "PAIS RECEPTOR Y PAIS DESTINO: ARGENTINA" (mismo problema que la cláusula: el patrón
+      // anterior dejaba "PAIS DESTINO: ARGENTINA").
+      if (/^PAIS\s+RECEPTOR/i.test(lineaTrim)) {
+        casoActual.paisDestino = valorDeCampo(lineaTrim);
         continue;
       }
       
-      const matchComision = lineaTrim.match(/^COMISIONES?\s+EN\s+EL\s+EXTRANJERO.+?(\d+)%/i);
+      const matchComision = lineaTrim.match(/^COMISIONES?\s+EN\s+EL\s+EXTRANJERO.+?(\d+(?:[.,]\d+)?)\s*%/i);
       if (matchComision) {
-        casoActual.comisionExtranjero = parseInt(matchComision[1]);
+        casoActual.comisionExtranjero = numeroDelSet(matchComision[1]);
+        // El texto completo decide si es descuento o recargo (SetExportacion lo lee).
+        casoActual.comisionTexto = lineaTrim;
+        continue;
+      }
+
+      const matchTipoCambio = lineaTrim.match(/^TIPO\s+DE\s+CAMBIO[^:]*:\s*(.+)$/i);
+      if (matchTipoCambio) {
+        casoActual.tipoCambio = numeroDelSet(matchTipoCambio[1]);
         continue;
       }
 
@@ -428,6 +479,10 @@ function extraerCasosDelSet(texto) {
           continue;
         }
 
+        // Exportación trae cantidades y precios con decimales; el resto de los sets, enteros.
+        const conDecimales = setActual?.tipo === 'EXPORTACION';
+        const num = (v) => (conDecimales ? numeroDelSet(v) : parseInt(v));
+
         // Detectar formato según número de partes
         if (partes.length === 4) {
           // Puede ser: NOMBRE, CANTIDAD, UNIDAD, PRECIO o NOMBRE, CANTIDAD, PRECIO, DESCUENTO
@@ -436,16 +491,16 @@ function extraerCasosDelSet(texto) {
             // Es una unidad de medida: NOMBRE, QTY, UNIDAD, PRECIO
             casoActual.items.push({
               nombre: nombre,
-              cantidad: parseInt(partes[1]) || 1,
+              cantidad: num(partes[1]) || 1,
               unidadMedida: posibleUnidad,
-              precioUnitario: parseInt(partes[3]) || 0,
+              precioUnitario: num(partes[3]) || 0,
             });
           } else {
             // Es descuento: NOMBRE, QTY, PRECIO, DESCUENTO
             casoActual.items.push({
               nombre: nombre,
-              cantidad: parseInt(partes[1]) || 1,
-              precioUnitario: parseInt(partes[2]) || 0,
+              cantidad: num(partes[1]) || 1,
+              precioUnitario: num(partes[2]) || 0,
               descuento: partes[3],
             });
           }
@@ -454,8 +509,8 @@ function extraerCasosDelSet(texto) {
 
         if (partes.length === 3) {
           // NOMBRE, CANTIDAD, PRECIO/VALOR
-          const qty = parseInt(partes[1]);
-          const precio = parseInt(partes[2]);
+          const qty = num(partes[1]);
+          const precio = num(partes[2]);
           if (!isNaN(qty) && !isNaN(precio)) {
             casoActual.items.push({
               nombre: nombre,
@@ -468,7 +523,7 @@ function extraerCasosDelSet(texto) {
 
         if (partes.length === 2) {
           // NOMBRE, CANTIDAD (guías sin precio) o NOMBRE, VALOR (NC/ND)
-          const valor = parseInt(partes[1]);
+          const valor = num(partes[1]);
           if (!isNaN(valor)) {
             // Para NC/ND que modifican monto, el segundo valor es el precio unitario modificado
             if (casoActual.razonReferencia?.includes('MODIFICA MONTO')) {
@@ -499,6 +554,8 @@ function extraerCasosDelSet(texto) {
         });
         continue;
       }
+
+      if (lineaTrim) casoActual.noInterpretadas.push(lineaTrim);
     }
 
     // ===== SET LIBRO DE COMPRAS PARA EXENTOS =====
@@ -958,6 +1015,11 @@ function generarEstructuraSetLiquidaciones(set) {
 
 /**
  * Genera estructura para SET EXPORTACION (110, 111, 112)
+ *
+ * Cada caso conserva los textos del set tal cual (moneda, cláusula, puertos, país...): la
+ * traducción a códigos de Aduana la hace SetExportacion, que es donde se puede fallar con un
+ * mensaje útil si un texto no calza con la tabla. `raw` y `noInterpretadas` viajan con el caso
+ * para poder revisar contra el set lo que se emitió.
  */
 function generarEstructuraSetExportacion(set) {
   const casos = [];
@@ -966,11 +1028,13 @@ function generarEstructuraSetExportacion(set) {
     casos.push({
       id: caso.id,
       tipoDTE: caso.tipoDTE?.codigo,
+      documento: caso.documento,
       items: caso.items.map(item => ({
         nombre: item.nombre,
         cantidad: item.cantidad,
         unidad: item.unidadMedida,
-        precio: item.precioUnitario || item.valorLinea,
+        precio: item.precioUnitario ?? item.valorLinea,
+        ...(item.descuento ? { descuento: item.descuento } : {}),
       })),
       moneda: caso.moneda,
       formaPago: caso.formaPago,
@@ -986,21 +1050,31 @@ function generarEstructuraSetExportacion(set) {
       seguro: caso.seguro,
       paisDestino: caso.paisDestino,
       comisionExtranjero: caso.comisionExtranjero,
+      ...(caso.comisionTexto ? { comisionTexto: caso.comisionTexto } : {}),
+      ...(caso.tipoCambio ? { tipoCambio: caso.tipoCambio } : {}),
+      ...(caso.descuentoGlobal ? { descuentoGlobal: caso.descuentoGlobal } : {}),
       ...(caso.casoReferenciado ? {
         referenciaCaso: caso.casoReferenciado,
         razonRef: caso.razonReferencia,
+        codRef: determinarCodRef(caso.razonReferencia),
       } : {}),
+      raw: caso.raw || [],
+      noInterpretadas: caso.noInterpretadas || [],
     });
+  }
+
+  // Solo los tipos que el set usa: un tipo con 0 casos pediría folios que nadie emite.
+  const cafRequired = {};
+  for (const tipo of [110, 111, 112]) {
+    const n = casos.filter(c => c.tipoDTE === tipo).length;
+    if (n) cafRequired[tipo] = n;
   }
 
   return {
     numeroAtencion: set.numeroAtencion,
+    nombre: set.nombre,
     casos,
-    cafRequired: {
-      110: casos.filter(c => c.tipoDTE === 110).length,
-      111: casos.filter(c => c.tipoDTE === 111).length,
-      112: casos.filter(c => c.tipoDTE === 112).length,
-    },
+    cafRequired,
   };
 }
 
@@ -1237,13 +1311,15 @@ function generarEstructurasParaScripts(datosExtraidos, receptorConfig = {}) {
       case 'LIQUIDACION':
         estructuras.setLiquidaciones = generarEstructuraSetLiquidaciones(set);
         break;
-      case 'EXPORTACION':
-        if (set.nombre.includes('(1)')) {
-          estructuras.setExportacion1 = generarEstructuraSetExportacion(set);
-        } else if (set.nombre.includes('(2)')) {
-          estructuras.setExportacion2 = generarEstructuraSetExportacion(set);
-        }
+      case 'EXPORTACION': {
+        // El SII entrega dos sets de exportación. El portal los nombra "SET DOCUMENTOS DE
+        // EXPORTACION" y "...(2)" (ver los patrones de declararAvance), así que el primero
+        // puede venir sin "(1)". Antes se exigía "(1)" y un set sin número se perdía entero.
+        const esSegundo = /\(\s*2\s*\)/.test(set.nombre);
+        const clave = esSegundo || estructuras.setExportacion1 ? 'setExportacion2' : 'setExportacion1';
+        estructuras[clave] = generarEstructuraSetExportacion(set);
         break;
+      }
       case 'LIBRO_COMPRAS':
         estructuras.libroCompras = generarEstructuraLibroCompras(set);
         break;
@@ -1284,6 +1360,7 @@ module.exports = {
   generarEstructuraSetFacturaCompra,
   generarEstructuraSetLiquidaciones,
   generarEstructuraSetExportacion,
+  numeroDelSet,
   generarEstructuraLibroCompras,
   generarEstructuraLibroGuiasDesdeSetGuia,
   

@@ -60,6 +60,9 @@ npm install @devlas/dte-sii
 | `52` | Guía de Despacho |
 | `56` | Nota de Débito |
 | `61` | Nota de Crédito |
+| `110` | Factura de Exportación Electrónica |
+| `111` | Nota de Débito de Exportación Electrónica |
+| `112` | Nota de Crédito de Exportación Electrónica |
 
 ---
 
@@ -1036,7 +1039,7 @@ dte-sii/
 
 El directorio `cert/` contiene los helpers necesarios para ejecutar el proceso de certificación ante el SII. Orquestado por `CertRunner`, incluye:
 
-- Generación de sets básicos, de compra, exentos y guías
+- Generación de sets básicos, de compra, exentos, guías y exportación
 - Libros de compras, ventas y guías para certificación
 - Envío de boletas de certificación
 - Intercambio de DTE entre contribuyentes (simulación)
@@ -1046,6 +1049,39 @@ El directorio `cert/` contiene los helpers necesarios para ejecutar el proceso d
 // Uso desde un proyecto ESM
 const { CertFolioHelper } = require('@devlas/dte-sii')
 ```
+
+### Sets de exportación (110, 111, 112)
+
+El SII entrega dos sets de exportación ("SET DOCUMENTOS DE EXPORTACION" y "...(2)", `SET11`
+en la página de generación), cada uno con su número de atención; `CertRunner` los ejecuta con
+`ejecutarSetExportacion1()` y `ejecutarSetExportacion2()` y los declara por separado.
+
+Lo que el set no trae se entrega en la configuración del runner, y no tiene valor por defecto:
+
+```javascript
+const runner = new CertRunner({
+  // ...emisor, certificado, receptor como siempre
+  receptorExtranjero: { razon_social: 'CLIENTE EXTRANJERO', giro: 'IMPORTADOR', direccion: 'CALLE 1', ciudad: 'MIAMI' },
+  exportacion: {
+    // Pesos por unidad de cada moneda del set, del Banco Central, del día de emisión.
+    // También puede ser una función (moneda, caso) => número.
+    tiposCambio: { 'DOLAR USA': 945.12 },
+    // Opcional: textos del set que las tablas de Aduana no resuelven.
+    codigos: { puerto: { 'PUERTO NUEVO': 997 } },
+  },
+})
+```
+
+- El documento va dentro de `<Exportaciones>`, no de `<Documento>` (lo decide `DTE` por el tipo),
+  con el receptor `55555555-5`, `Extranjero/Nacionalidad` y sin comuna.
+- `Totales` va en la moneda del set (`TpoMoneda`, `MntExe`, `MntTotal`, con decimales) y
+  `OtraMoneda` en pesos (`PESO CL`, `TpoCambio`, los mismos montos convertidos).
+- Los textos del set (cláusula, vía, puertos, bulto, país, forma de pago) se traducen a los
+  códigos de Aduana con `resolverCodigoAduana()`. Si un texto no está en la tabla o calza con
+  dos códigos, **lanza**: ningún campo de `Aduana` es obligatorio en el XSD, así que un código
+  mal elegido pasa el esquema y el SII lo rechaza recién al comparar contra el caso.
+- `SetExportacion.planificar(casos)` arma los documentos sin folios ni firma, para revisarlos
+  contra el set antes de emitir.
 
 ---
 

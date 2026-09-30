@@ -19,6 +19,7 @@ const {
   calcularTotalesDesdeDetalle,
   TASA_IVA_DEFAULT,
   TIPOS_BOLETA,
+  TIPOS_EXPORTACION,
   TASA_IVA,
 } = require('./utils');
 const { serializeNode, escapeAttr, escapeText, buildSignedInfo, buildSignature } = require('./utils/c14n');
@@ -59,7 +60,7 @@ const CAMPOS_IDDOC_OPCIONALES = [
 // ============================================
 
 // Cierres tras los cuales se corta la línea (ver _buildXmlSinFirma). Solo elementos hermanos
-// dentro de <Documento>; nunca se toca el contenido de texto de un campo.
+// dentro de <Documento> (o <Exportaciones>); nunca se toca el contenido de texto de un campo.
 const SALTO_ENTRE_ELEMENTOS = /<\/(Encabezado|Detalle|DscRcgGlobal|Referencia|TED)><(?=[A-Za-z])/g;
 
 class DTE {
@@ -80,6 +81,10 @@ class DTE {
     this.xml = null;
     this.tedXml = null;
     this.tmstFirma = null;
+    // Elemento que envuelve el documento dentro de <DTE>. DTE_v10.xsd define tres ramas:
+    // <Documento> (todos los nacionales), <Liquidacion> y <Exportaciones> (110, 111 y 112).
+    // Se fija en generarXML() según el tipo; lo usan también el timbre, la firma y la c14n.
+    this.elementoDocumento = 'Documento';
   }
   
   _esFormatoSimplificado(datos) {
@@ -218,6 +223,7 @@ class DTE {
     const det = this.datos.Detalle;
     const tipoDte = Number(enc.IdDoc.TipoDTE);
     const esBoleta = TIPOS_BOLETA.includes(tipoDte);
+    this.elementoDocumento = TIPOS_EXPORTACION.includes(tipoDte) ? 'Exportaciones' : 'Documento';
     
     this.id = `DTE_T${tipoDte}F${enc.IdDoc.Folio}`;
     
@@ -226,10 +232,20 @@ class DTE {
     const receptor = this._buildReceptor(enc.Receptor, esBoleta);
     const detalle = this._buildDetalle(det);
     
+    // Orden del XSD: IdDoc, Emisor, Receptor, Transporte, Totales, OtraMoneda. Transporte,
+    // Totales y OtraMoneda pasan tal cual: quien arma el documento responde por el orden de
+    // sus hijos (ver utils/exportacion.js para los de exportación).
     this.documento = {
-      Documento: {
+      [this.elementoDocumento]: {
         '@_ID': this.id,
-        Encabezado: { IdDoc: idDoc, Emisor: emisor, Receptor: receptor, ...(enc.Transporte ? { Transporte: enc.Transporte } : {}), Totales: enc.Totales },
+        Encabezado: {
+          IdDoc: idDoc,
+          Emisor: emisor,
+          Receptor: receptor,
+          ...(enc.Transporte ? { Transporte: enc.Transporte } : {}),
+          Totales: enc.Totales,
+          ...(enc.OtraMoneda ? { OtraMoneda: enc.OtraMoneda } : {}),
+        },
         Detalle: detalle,
         ...(this.datos.DscRcgGlobal ? { DscRcgGlobal: this.datos.DscRcgGlobal } : {}),
         ...(this.datos.Referencia  ? { Referencia:  this.datos.Referencia  } : {}),
@@ -320,8 +336,8 @@ class DTE {
     
     this.tedXml = `<TED version="1.0"><DD><RE>${dd.RE}</RE><TD>${dd.TD}</TD><F>${dd.F}</F><FE>${dd.FE}</FE><RR>${dd.RR}</RR><RSR>${rznRecepXml}</RSR><MNT>${dd.MNT}</MNT><IT1>${it1Xml}</IT1>${dd.CAF}<TSTED>${dd.TSTED}</TSTED></DD><FRMT algoritmo="SHA1withRSA">${firma}</FRMT></TED>`;
     
-    this.documento.Documento.TED = '__TED_PLACEHOLDER__';
-    this.documento.Documento.TmstFirma = '__TMSTFIRMA_PLACEHOLDER__';
+    this.documento[this.elementoDocumento].TED = '__TED_PLACEHOLDER__';
+    this.documento[this.elementoDocumento].TmstFirma = '__TMSTFIRMA_PLACEHOLDER__';
     
     return this;
   }
@@ -370,7 +386,11 @@ class DTE {
     });
     
     // Insertar firma
-    const xmlFirmado = dteXml.replace('</Documento></DTE>', `</Documento>${signatureXml}</DTE>`);
+    const cierre = `</${this.elementoDocumento}></DTE>`;
+    if (!dteXml.includes(cierre)) {
+      throw new Error(`DTE.firmar: no encontré ${cierre} para insertar la firma (¿se llamó a generarXML() y timbrar()?)`);
+    }
+    const xmlFirmado = dteXml.replace(cierre, `</${this.elementoDocumento}>${signatureXml}</DTE>`);
     this.xml = formatBase64InXml(xmlFirmado);
     
     return this;
@@ -420,7 +440,8 @@ class DTE {
   // ============================================
   
   _c14nDocumento(doc) {
-    const documento = doc.getElementsByTagName('Documento')[0];
+    const elemento = this.elementoDocumento || 'Documento';
+    const documento = doc.getElementsByTagName(elemento)[0];
     const dteRoot = doc.getElementsByTagName('DTE')[0];
     if (!documento) return '';
 
@@ -432,7 +453,7 @@ class DTE {
       if (xsiNs) inheritedNs.set('xmlns:xsi', xsiNs);
     }
 
-    let c14n = '<Documento';
+    let c14n = `<${elemento}`;
     if (inheritedNs.has('xmlns')) c14n += ` xmlns="${inheritedNs.get('xmlns')}"`;
     if (inheritedNs.has('xmlns:xsi')) c14n += ` xmlns:xsi="${inheritedNs.get('xmlns:xsi')}"`;
     const id = documento.getAttribute('ID');
@@ -443,7 +464,7 @@ class DTE {
       c14n += serializeNode(documento.childNodes[i], inheritedNs);
     }
 
-    c14n += '</Documento>';
+    c14n += `</${elemento}>`;
     return c14n;
   }
   

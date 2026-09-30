@@ -48,6 +48,13 @@ const TIPOS_EXENTOS = [34, 41];
 const TIPOS_NOTAS = [56, 61];
 
 /**
+ * Documentos de exportación (factura, nota de débito y nota de crédito). En el XML van dentro
+ * de <Exportaciones> en vez de <Documento>, con montos en moneda extranjera (TpoMoneda) y su
+ * equivalente en pesos en OtraMoneda.
+ */
+const TIPOS_EXPORTACION = [110, 111, 112];
+
+/**
  * Tipos que son facturas
  */
 const TIPOS_FACTURA = [33, 34, 46];
@@ -234,6 +241,15 @@ function esNota(tipo) {
 }
 
 /**
+ * Verificar si un tipo es documento de exportación (110, 111, 112)
+ * @param {number} tipo - Tipo de DTE
+ * @returns {boolean}
+ */
+function esExportacion(tipo) {
+  return TIPOS_EXPORTACION.includes(Number(tipo));
+}
+
+/**
  * Verificar si un tipo requiere receptor identificado
  * @param {number} tipo - Tipo de DTE
  * @returns {boolean}
@@ -268,6 +284,7 @@ module.exports = {
   TIPOS_BOLETA,
   TIPOS_EXENTOS,
   TIPOS_NOTAS,
+  TIPOS_EXPORTACION,
   TIPOS_FACTURA,
   TIPOS_RECEPTOR_REQUERIDO,
   TIPOS_CEDIBLES,
@@ -296,6 +313,7 @@ module.exports = {
   esBoleta,
   esExento,
   esNota,
+  esExportacion,
   requiereReceptor,
   getNombreDte,
   esTipoValido,

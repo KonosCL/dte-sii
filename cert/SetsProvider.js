@@ -144,6 +144,7 @@ class SetsProvider {
    * @param {boolean} [options.descargar=true] - Descargar contenido del set
    * @param {boolean} [options.forceRefresh=false] - Forzar nueva descarga
    * @param {Object} [options.setsOpcionales] - Sets opcionales a incluir
+   * @param {boolean} [options.incluirBasico=true] - false no pide el SET01 (ver SiiCertificacion)
    * @returns {Promise<SetsResult>}
    */
   async obtenerSets(options = {}) {
@@ -151,6 +152,7 @@ class SetsProvider {
       descargar = true,
       forceRefresh = false,
       setsOpcionales = DEFAULT_SETS_OPCIONALES,
+      incluirBasico = true,
     } = options;
 
     this.logger.log('\n[SessionSii] Obteniendo sets de prueba...');
@@ -182,6 +184,7 @@ class SetsProvider {
       const result = await siiCert.generarSetPruebas({
         descargar,
         setsOpcionales,
+        incluirBasico,
       });
 
       if (!result.success) {
@@ -243,7 +246,7 @@ class SetsProvider {
 
           const siiCertFresh = this._getSiiCert();
           // sesión vacía → ensureSession dentro de generarSetPruebas hará el login redirect
-          const retryResult = await siiCertFresh.generarSetPruebas({ descargar, setsOpcionales });
+          const retryResult = await siiCertFresh.generarSetPruebas({ descargar, setsOpcionales, incluirBasico });
           if (!retryResult.success) {
             return {
               success: false,

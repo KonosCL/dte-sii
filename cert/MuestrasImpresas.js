@@ -30,6 +30,7 @@ const {
   DECLARACION_RECIBO,
 } = require('../utils/constants');
 const { normalizeArray } = require('../index');
+const ADUANA = require('../utils/aduana-tablas');
 
 // Sets para lookup rápido
 const CEDIBLE_TIPOS = new Set(TIPOS_CEDIBLES);
@@ -49,6 +50,21 @@ const safeText = (value) => {
 const formatMonto = (value) => {
   if (!value) return '0';
   return Number(value).toLocaleString('es-CL');
+};
+
+/** Montos de exportación: en la moneda de la operación, con hasta 4 decimales y sin "$". */
+const formatMontoMoneda = (value) => {
+  if (!value) return '0';
+  return Number(value).toLocaleString('es-CL', { maximumFractionDigits: 4 });
+};
+
+const TIPOS_EXPORTACION = new Set([110, 111, 112]);
+
+/** "906 SAN ANTONIO" → "SAN ANTONIO (906)"; si el código no está en la tabla, solo el código. */
+const glosaAduana = (tabla, codigo) => {
+  if (codigo === undefined || codigo === null || codigo === '') return '';
+  const glosa = tabla[Number(codigo)];
+  return glosa ? `${glosa} (${codigo})` : String(codigo);
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -211,13 +227,15 @@ class MuestrasImpresas {
     };
 
     return dtes.map((dte, idx) => {
-      const doc = dte?.Documento || dte?.DTE?.Documento || {};
+      // Los documentos de exportación van en <Exportaciones>, no en <Documento>.
+      const doc = dte?.Documento || dte?.Exportaciones || dte?.DTE?.Documento || dte?.DTE?.Exportaciones || {};
       const encabezado = doc?.Encabezado || {};
       const idDoc = encabezado?.IdDoc || {};
       const emisor = encabezado?.Emisor || {};
       const receptor = encabezado?.Receptor || {};
       const totales = encabezado?.Totales || {};
       const transporte = encabezado?.Transporte || {};
+      const otraMoneda = encabezado?.OtraMoneda || null;
       const detalle = toArray(doc?.Detalle);
       const referencias = toArray(doc?.Referencia);
       const descuentosGlobales = toArray(doc?.DscRcgGlobal);
@@ -265,6 +283,8 @@ class MuestrasImpresas {
         receptor,
         totales,
         transporte,
+        otraMoneda,
+        esExportacion: TIPOS_EXPORTACION.has(tipoDte),
         detalle,
         referencias,
         descuentosGlobales,
@@ -750,6 +770,59 @@ class MuestrasImpresas {
     return PDF_LAYOUT.acuse.padY * 2 + PDF_LAYOUT.lineH.small * 3 + PDF_LAYOUT.gap.tiny * 2;
   }
 
+  /**
+   * Filas del recuadro de exportación. El manual de muestras impresas pide, cuando hay
+   * transporte de mercaderías: puerto de embarque, puerto de desembarque, total de bultos,
+   * RUT y país receptor, y tipo de moneda. Se agregan cláusula, vía, flete y seguro, que son
+   * los otros datos que el set compara.
+   * @private
+   */
+  _pdfFilasExportacion(doc) {
+    const aduana = doc.transporte?.Aduana || {};
+    const tot = doc.totales || {};
+    const otra = doc.otraMoneda || {};
+    const paisCod = aduana.CodPaisRecep ?? doc.receptor?.Extranjero?.Nacionalidad;
+    const filas = [];
+    const par = (a, b) => filas.push([a, b]);
+    par(['Tipo de Moneda', safeText(tot.TpoMoneda)],
+      ['Tipo de Cambio', otra.TpoCambio ? `${formatMontoMoneda(otra.TpoCambio)} (${safeText(otra.TpoMoneda || 'PESO CL')})` : '']);
+    par(['País Receptor', glosaAduana(ADUANA.PAISES, paisCod)],
+      ['País Destino', glosaAduana(ADUANA.PAISES, aduana.CodPaisDestin)]);
+    if (aduana.CodPtoEmbarque || aduana.CodPtoDesemb) {
+      par(['Puerto de Embarque', glosaAduana(ADUANA.PUERTOS, aduana.CodPtoEmbarque)],
+        ['Puerto de Desembarque', glosaAduana(ADUANA.PUERTOS, aduana.CodPtoDesemb)]);
+    }
+    const bultos = toArray(aduana.TipoBultos);
+    if (aduana.TotBultos || bultos.length) {
+      par(['Total de Bultos', safeText(aduana.TotBultos)],
+        ['Tipo de Bulto', bultos.map((b) => glosaAduana(ADUANA.TIPOS_BULTO, b.CodTpoBultos)).join(', ')]);
+    }
+    if (aduana.CodClauVenta || aduana.CodModVenta) {
+      par(['Cláusula de Venta', glosaAduana(ADUANA.CLAUSULAS_VENTA, aduana.CodClauVenta)],
+        ['Total Cláusula', aduana.TotClauVenta ? formatMontoMoneda(aduana.TotClauVenta) : '']);
+      par(['Modalidad de Venta', glosaAduana(ADUANA.MODALIDADES_VENTA, aduana.CodModVenta)],
+        ['Vía de Transporte', glosaAduana(ADUANA.VIAS_TRANSPORTE, aduana.CodViaTransp)]);
+    } else if (aduana.CodViaTransp) {
+      par(['Vía de Transporte', glosaAduana(ADUANA.VIAS_TRANSPORTE, aduana.CodViaTransp)], ['', '']);
+    }
+    if (aduana.MntFlete || aduana.MntSeguro) {
+      par(['Flete', aduana.MntFlete ? formatMontoMoneda(aduana.MntFlete) : ''],
+        ['Seguro', aduana.MntSeguro ? formatMontoMoneda(aduana.MntSeguro) : '']);
+    }
+    // Sin celdas vacías (una nota de crédito no trae puertos ni país de destino): se
+    // reacomodan los datos que sí vienen, de a dos por fila.
+    const celdas = filas.flat().filter(([label, valor]) => label && valor);
+    const out = [];
+    for (let i = 0; i < celdas.length; i += 2) out.push([celdas[i], celdas[i + 1] || ['', '']]);
+    return out;
+  }
+
+  _pdfCalcExportacionHeight(doc) {
+    if (!doc.esExportacion) return 0;
+    const filas = this._pdfFilasExportacion(doc).length;
+    return PDF_LAYOUT.acuse.padY * 2 + filas * PDF_LAYOUT.lineH.small + Math.max(0, filas - 1) * PDF_LAYOUT.gap.tiny;
+  }
+
   _pdfCalcReferencesHeight(doc) {
     if (!doc.referencias || !doc.referencias.length) return 0;
     return (
@@ -778,7 +851,9 @@ class MuestrasImpresas {
   _pdfCalcTotalesHeight(doc) {
     const { totales = {}, descuentosGlobales = [], tipoDte } = doc;
     let rows = 0;
-    if (tipoDte === 34) {
+    if (doc.esExportacion) {
+      rows = this._pdfFilasTotalesExportacion(doc).length;
+    } else if (tipoDte === 34) {
       if (totales.MntExe)   rows++;
       if (totales.MntTotal) rows++;
     } else {
@@ -900,12 +975,18 @@ class MuestrasImpresas {
     this._pdfText(page, rutVal,   rutX + fonts.bold.widthOfTextAtSize(rutLabel, fs), py, H, fonts.normal, fs, BLACK);
     py += lh + PDF_LAYOUT.gap.tiny;
 
-    // Fila 2: Dirección + Comuna
+    // Fila 2: Dirección + Comuna (en exportación, ciudad y país: el receptor es extranjero)
     const dLabel = 'Dirección: ';
     this._pdfText(page, dLabel, px, py, H, fonts.bold, fs, BLACK);
-    this._pdfText(page, safeText(receptor.DirRecep || ''), px + fonts.bold.widthOfTextAtSize(dLabel, fs), py, H, fonts.normal, fs, BLACK);
-    const cLabel   = 'Comuna: ';
-    const cVal     = safeText(receptor.CmnaRecep || '');
+    const direccion = doc.esExportacion && receptor.CiudadRecep
+      ? `${safeText(receptor.DirRecep || '')}${receptor.DirRecep ? ', ' : ''}${safeText(receptor.CiudadRecep)}`
+      : safeText(receptor.DirRecep || '');
+    this._pdfText(page, direccion, px + fonts.bold.widthOfTextAtSize(dLabel, fs), py, H, fonts.normal, fs, BLACK);
+    const paisRecep = doc.esExportacion
+      ? (ADUANA.PAISES[Number(doc.transporte?.Aduana?.CodPaisRecep ?? receptor.Extranjero?.Nacionalidad)] || '')
+      : '';
+    const cLabel   = doc.esExportacion ? 'País: ' : 'Comuna: ';
+    const cVal     = doc.esExportacion ? safeText(paisRecep) : safeText(receptor.CmnaRecep || '');
     const cTotal   = `${cLabel}${cVal}`;
     const cX       = W - M - PDF_LAYOUT.acuse.padX - fonts.normal.widthOfTextAtSize(cTotal, fs);
     this._pdfText(page, cLabel, cX, py, H, fonts.bold, fs, BLACK);
@@ -917,6 +998,27 @@ class MuestrasImpresas {
     this._pdfText(page, gLabel, px, py, H, fonts.bold, fs, BLACK);
     this._pdfText(page, safeText(receptor.GiroRecep || ''), px + fonts.bold.widthOfTextAtSize(gLabel, fs), py, H, fonts.normal, fs, BLACK);
 
+    return y + boxH;
+  }
+
+  _pdfRenderExportacion(page, doc, fonts, y, H, W, M, rgb) {
+    const filas = this._pdfFilasExportacion(doc);
+    const boxH  = this._pdfCalcExportacionHeight(doc);
+    const boxW  = W - 2 * M;
+    const BLACK = rgb(0, 0, 0);
+    const fs    = PDF_LAYOUT.font.small;
+    const colX  = [M + PDF_LAYOUT.acuse.padX, M + boxW / 2 + PDF_LAYOUT.acuse.padX];
+    this._pdfRect(page, M, y, boxW, boxH, H, { stroke: rgb(0.5, 0.5, 0.5), strokeWidth: 0.5 });
+    let py = y + PDF_LAYOUT.acuse.padY;
+    for (const fila of filas) {
+      fila.forEach(([label, valor], i) => {
+        if (!label) return;
+        const l = `${label}: `;
+        this._pdfText(page, l, colX[i], py, H, fonts.bold, fs, BLACK);
+        this._pdfText(page, valor || '', colX[i] + fonts.bold.widthOfTextAtSize(l, fs), py, H, fonts.normal, fs, BLACK);
+      });
+      py += PDF_LAYOUT.lineH.small + PDF_LAYOUT.gap.tiny;
+    }
     return y + boxH;
   }
 
@@ -1005,6 +1107,8 @@ class MuestrasImpresas {
       { key: 'punit', w: colW.punit, label: doc.mntBruto ? 'P.Unit. c/IVA' : 'P.Unit.', align: 'right' },
       { key: 'valor', w: colW.valor, label: doc.mntBruto ? 'Valor c/IVA' : 'Valor',     align: 'right' },
     ];
+    // En exportación los montos van en la moneda de la operación, con decimales y sin "$".
+    const monto = doc.esExportacion ? (v) => formatMontoMoneda(v) : (v) => `$${formatMonto(v)}`;
 
     // Encabezado
     this._pdfRect(page, M, y, tableW, PDF_LAYOUT.table.headerH, H, { fill: LGRAY });
@@ -1038,8 +1142,8 @@ class MuestrasImpresas {
         cod:   safeText((item.CdgItem && item.CdgItem.VlrCodigo) || item.CdgItem || ''),
         cant:  item.QtyItem != null ? String(item.QtyItem) : '',
         unid:  safeText(item.UnmdItem || 'UN'),
-        punit: item.PrcItem != null ? `$${formatMonto(item.PrcItem)}` : '',
-        valor: item.MontoItem != null ? `$${formatMonto(item.MontoItem)}` : '',
+        punit: item.PrcItem != null ? monto(item.PrcItem) : '',
+        valor: item.MontoItem != null ? monto(item.MontoItem) : '',
       };
 
       cx = M;
@@ -1075,6 +1179,26 @@ class MuestrasImpresas {
     return y;
   }
 
+  /** Filas de totales de un documento de exportación: moneda de la operación y pesos. */
+  _pdfFilasTotalesExportacion(doc) {
+    const { totales = {}, descuentosGlobales = [], otraMoneda } = doc;
+    const moneda = safeText(totales.TpoMoneda);
+    const rows = [];
+    for (const dg of toArray(descuentosGlobales)) {
+      const label = dg?.GlosaDR
+        ? `${dg?.TpoMov === 'D' ? 'Dcto.' : 'Recargo'} ${safeText(dg.GlosaDR)}`
+        : `${dg?.TpoMov === 'D' ? 'Descuento' : 'Recargo'} Global`;
+      const valor = dg?.TpoValor === '%' ? `${formatMontoMoneda(dg.ValorDR)}%` : formatMontoMoneda(dg?.ValorDR);
+      rows.push([label, valor, false]);
+    }
+    rows.push([`Monto Exento (${moneda})`, formatMontoMoneda(totales.MntExe), false]);
+    rows.push([`Monto Total (${moneda})`, formatMontoMoneda(totales.MntTotal), true]);
+    if (otraMoneda) {
+      rows.push([`Monto Total (${safeText(otraMoneda.TpoMoneda || 'PESO CL')})`, `$${formatMonto(Math.round(Number(otraMoneda.MntTotOtrMnda || 0)))}`, false]);
+    }
+    return rows;
+  }
+
   _pdfRenderTotales(page, doc, fonts, y, H, W, M, rgb) {
     const { totales = {}, descuentosGlobales = [], tipoDte } = doc;
     const esExenta = tipoDte === 34;
@@ -1086,7 +1210,9 @@ class MuestrasImpresas {
     const BLACK    = rgb(0,0,0);
 
     const rows = [];
-    if (esExenta) {
+    if (doc.esExportacion) {
+      rows.push(...this._pdfFilasTotalesExportacion(doc));
+    } else if (esExenta) {
       if (totales.MntExe)   rows.push(['Monto Exento',  `$${formatMonto(totales.MntExe)}`,  false]);
       if (totales.MntTotal) rows.push(['Monto Total',   `$${formatMonto(totales.MntTotal)}`, true]);
     } else {
@@ -1105,8 +1231,12 @@ class MuestrasImpresas {
     const labelW = Math.round(boxW * 0.55);
     const valorW = boxW - labelW;
 
-    for (const [label, valor, isBold] of rows) {
+    for (const [labelOriginal, valor, isBold] of rows) {
       const font = isBold ? fonts.bold : fonts.normal;
+      // Una glosa larga (p. ej. "COMISIONES EN EL EXTRANJERO") no puede invadir la columna del valor.
+      let label = labelOriginal;
+      const maxLabelW = labelW - PDF_LAYOUT.table.padX * 2;
+      while (label.length > 4 && font.widthOfTextAtSize(label, fs) > maxLabelW) label = label.slice(0, -2).trimEnd() + '…';
       this._pdfRect(page, boxX,         ry, labelW, rowH, H, { stroke: DARK, strokeWidth: 0.5 });
       this._pdfRect(page, boxX + labelW, ry, valorW, rowH, H, { stroke: DARK, strokeWidth: 0.5 });
       this._pdfText(page, label, boxX + PDF_LAYOUT.table.padX, ry + PDF_LAYOUT.table.padY, H, font, fs, BLACK);
@@ -1235,6 +1365,7 @@ class MuestrasImpresas {
     const headerH    = this._pdfCalcHeaderHeight(doc, fonts, logoImage);
     const fechaH     = PDF_LAYOUT.lineH.normal;
     const receptorH  = this._pdfCalcReceptorHeight();
+    const exportH    = doc.esExportacion ? this._pdfCalcExportacionHeight(doc) + PDF_LAYOUT.gap.section : 0;
     const trasladoH  = (doc.tipoDte === 52 && doc.indTraslado) ? PDF_LAYOUT.lineH.small + PDF_LAYOUT.gap.small : 0;
     const refsH      = this._pdfCalcReferencesHeight(doc);
     const detalleH   = this._pdfCalcDetalleHeight(doc, fonts, W, M);
@@ -1249,6 +1380,7 @@ class MuestrasImpresas {
       headerH   + PDF_LAYOUT.gap.section +
       fechaH    + PDF_LAYOUT.gap.small   +
       receptorH + PDF_LAYOUT.gap.section +
+      exportH +
       trasladoH +
       refsH +
       detalleH  + PDF_LAYOUT.gap.section +
@@ -1273,6 +1405,11 @@ class MuestrasImpresas {
 
     y = this._pdfRenderReceptor(page, doc, fonts, y, H, W, M, rgb);
     y += PDF_LAYOUT.gap.section;
+
+    if (exportH > 0) {
+      y = this._pdfRenderExportacion(page, doc, fonts, y, H, W, M, rgb);
+      y += PDF_LAYOUT.gap.section;
+    }
 
     if (trasladoH > 0) {
       y = this._pdfRenderTraslado(page, doc, fonts, y, H, M, rgb);
@@ -1329,7 +1466,7 @@ class MuestrasImpresas {
 
     for (const filePath of xmlFiles) {
       const sourceFile = path.basename(filePath).toLowerCase();
-      const isPruebas  = /envio-set-(basico|guia|exenta|compra)\.xml/i.test(sourceFile);
+      const isPruebas  = /envio-set-(basico|guia|exenta|compra|exportacion\d?)\.xml/i.test(sourceFile);
       const targetDir  = isPruebas ? pruebasDir : simulacionDir;
 
       let docs;

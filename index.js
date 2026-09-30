@@ -198,6 +198,17 @@ const {
   isCertificateExpired,
   getDaysUntilExpiry,
   createTlsOptions,
+
+  // Exportación (110, 111, 112)
+  TIPOS_EXPORTACION,
+  esExportacion,
+  aduana,
+  resolverCodigoAduana,
+  resolverMonedaSii,
+  buildDetalleExportacion,
+  buildDscRcgGlobalExportacion,
+  calcularTotalesExportacion,
+  buildTransporteExportacion,
 } = utils;
 
 // ============================================
@@ -448,4 +459,17 @@ module.exports = {
   isCertificateExpired,
   getDaysUntilExpiry,
   createTlsOptions,
+
+  // ─────────────────────────────────────────
+  // Exportación (110, 111, 112)
+  // ─────────────────────────────────────────
+  TIPOS_EXPORTACION,
+  esExportacion,
+  aduana,
+  resolverCodigoAduana,
+  resolverMonedaSii,
+  buildDetalleExportacion,
+  buildDscRcgGlobalExportacion,
+  calcularTotalesExportacion,
+  buildTransporteExportacion,
 };
