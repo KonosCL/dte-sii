@@ -60,6 +60,16 @@ const formatMontoMoneda = (value) => {
 
 const TIPOS_EXPORTACION = new Set([110, 111, 112]);
 
+/** Documentos que no son DTE y pueden ir en Referencia (formato DTE, TpoDocRef). */
+const NOMBRES_REFERENCIA = {
+  SET: 'SET DE PRUEBAS',
+  801: 'ORDEN DE COMPRA', 802: 'NOTA DE PEDIDO', 803: 'CONTRATO', 804: 'RESOLUCIÓN',
+  807: 'DUS', 808: 'B/L (CONOCIMIENTO DE EMBARQUE)', 809: 'AWB (AIR WAY BILL)',
+  810: 'MIC/DTA', 811: 'CARTA DE PORTE', 812: 'RESOLUCIÓN SNA', 813: 'PASAPORTE',
+};
+const nombreReferencia = (tipo) =>
+  NOMBRES_DTE_IMPRESOS[tipo] || NOMBRES_REFERENCIA[String(tipo).trim()] || `Tipo ${tipo}`;
+
 /** "906 SAN ANTONIO" → "SAN ANTONIO (906)"; si el código no está en la tabla, solo el código. */
 const glosaAduana = (tabla, codigo) => {
   if (codigo === undefined || codigo === null || codigo === '') return '';
@@ -387,7 +397,7 @@ class MuestrasImpresas {
             </thead>
             <tbody>
               ${doc.referencias.map((ref) => {
-                const tipoRef = ref?.TpoDocRef ? (NOMBRES_DTE_IMPRESOS[ref.TpoDocRef] || `Tipo ${ref.TpoDocRef}`) : '';
+                const tipoRef = ref?.TpoDocRef ? nombreReferencia(ref.TpoDocRef) : '';
                 return `
                   <tr>
                     <td>${safeText(tipoRef)}</td>
@@ -766,7 +776,9 @@ class MuestrasImpresas {
    * @private
    */
   _pdfFilasExportacion(doc) {
-    const aduana = doc.transporte?.Aduana || {};
+    // Una nota de exportación sin datos de embarque propios imprime los del documento que
+    // corrige (manual de muestras: puertos y bultos son obligatorios si hay transporte).
+    const aduana = { ...(doc.aduanaReferida || {}), ...(doc.transporte?.Aduana || {}) };
     const tot = doc.totales || {};
     const otra = doc.otraMoneda || {};
     const paisCod = aduana.CodPaisRecep ?? doc.receptor?.Extranjero?.Nacionalidad;
@@ -827,7 +839,7 @@ class MuestrasImpresas {
     let   rowsH  = 0;
     for (const item of (doc.detalle || [])) {
       const lines  = this._pdfWrapText(safeText(item && item.NmbItem || ''), fonts.normal, PDF_LAYOUT.font.tiny, descW);
-      const hasDcto = !!(item && (item.DescuentoMonto || item.DescuentoPct));
+      const hasDcto = !!(item && (item.DescuentoMonto || item.DescuentoPct || item.RecargoMonto || item.RecargoPct));
       rowsH += Math.max(
         PDF_LAYOUT.table.rowH,
         lines.length * PDF_LAYOUT.lineH.tiny + PDF_LAYOUT.table.padY * 2 + (hasDcto ? PDF_LAYOUT.lineH.tiny : 0)
@@ -1072,7 +1084,7 @@ class MuestrasImpresas {
 
     // Filas
     for (const ref of doc.referencias) {
-      const tipRef  = ref && ref.TpoDocRef ? (NOMBRES_DTE_IMPRESOS[ref.TpoDocRef] || `Tipo ${ref.TpoDocRef}`) : '';
+      const tipRef  = ref && ref.TpoDocRef ? nombreReferencia(ref.TpoDocRef) : '';
       const values  = [
         safeText(tipRef),
         safeText(ref && ref.FolioRef || ''),
@@ -1145,7 +1157,7 @@ class MuestrasImpresas {
       const item    = doc.detalle[idx] || {};
       const descW   = colW.desc - PDF_LAYOUT.table.padX * 2;
       const descLines = this._pdfWrapText(safeText(item.NmbItem || ''), fonts.normal, PDF_LAYOUT.font.tiny, descW);
-      const hasDcto   = !!(item.DescuentoMonto || item.DescuentoPct);
+      const hasDcto   = !!(item.DescuentoMonto || item.DescuentoPct || item.RecargoMonto || item.RecargoPct);
       const rowH      = Math.max(
         PDF_LAYOUT.table.rowH,
         descLines.length * PDF_LAYOUT.lineH.tiny + PDF_LAYOUT.table.padY * 2 + (hasDcto ? PDF_LAYOUT.lineH.tiny : 0)
@@ -1171,9 +1183,19 @@ class MuestrasImpresas {
             ty += PDF_LAYOUT.lineH.tiny;
           }
           if (hasDcto) {
-            const dctoStr = item.DescuentoMonto
-              ? `Dcto: $${formatMonto(item.DescuentoMonto)}`
-              : `Dcto: ${item.DescuentoPct}%`;
+            const pct = (v) => (v ? ` (${v}%)` : '');
+            const partes = [];
+            if (item.DescuentoMonto || item.DescuentoPct) {
+              partes.push(item.DescuentoMonto
+                ? `Dcto: ${monto(item.DescuentoMonto)}${pct(item.DescuentoPct)}`
+                : `Dcto: ${item.DescuentoPct}%`);
+            }
+            if (item.RecargoMonto || item.RecargoPct) {
+              partes.push(item.RecargoMonto
+                ? `Recargo: ${monto(item.RecargoMonto)}${pct(item.RecargoPct)}`
+                : `Recargo: ${item.RecargoPct}%`);
+            }
+            const dctoStr = partes.join('  ');
             this._pdfText(page, dctoStr, cx + PDF_LAYOUT.table.padX, ty, H, fonts.normal, PDF_LAYOUT.font.legal, MGRAY);
           }
         } else {
@@ -1240,12 +1262,15 @@ class MuestrasImpresas {
     for (const [labelOriginal, valor, isBold] of rows) {
       const font = isBold ? fonts.bold : fonts.normal;
       // Una glosa larga (p. ej. "COMISIONES EN EL EXTRANJERO") no puede invadir la columna del valor.
+      // Primero se achica la letra hasta el tamaño legal; solo si aun así no cabe, se corta.
       let label = labelOriginal;
       const maxLabelW = labelW - PDF_LAYOUT.table.padX * 2;
-      while (label.length > 4 && font.widthOfTextAtSize(label, fs) > maxLabelW) label = label.slice(0, -2).trimEnd() + '…';
+      let fsLabel = fs;
+      while (fsLabel > PDF_LAYOUT.font.legal && font.widthOfTextAtSize(label, fsLabel) > maxLabelW) fsLabel -= 0.5;
+      while (label.length > 4 && font.widthOfTextAtSize(label, fsLabel) > maxLabelW) label = label.slice(0, -2).trimEnd() + '…';
       this._pdfRect(page, boxX,         ry, labelW, rowH, H, { stroke: DARK, strokeWidth: 0.5 });
       this._pdfRect(page, boxX + labelW, ry, valorW, rowH, H, { stroke: DARK, strokeWidth: 0.5 });
-      this._pdfText(page, label, boxX + PDF_LAYOUT.table.padX, ry + PDF_LAYOUT.table.padY, H, font, fs, BLACK);
+      this._pdfText(page, label, boxX + PDF_LAYOUT.table.padX, ry + PDF_LAYOUT.table.padY, H, font, fsLabel, BLACK);
       const vW  = font.widthOfTextAtSize(valor, fs);
       this._pdfText(page, valor, boxX + labelW + valorW - vW - PDF_LAYOUT.table.padX, ry + PDF_LAYOUT.table.padY, H, font, fs, BLACK);
       ry += rowH;
@@ -1470,18 +1495,20 @@ class MuestrasImpresas {
       archivos: [], errores: [], setPruebas: 0, setSimulacion: 0,
     };
 
+    const lotes = [];
     for (const filePath of xmlFiles) {
+      try {
+        lotes.push({ filePath, docs: this.parseEnvioDTE(fs.readFileSync(filePath, 'utf8')) });
+      } catch (e) {
+        resultado.errores.push({ file: filePath, error: e.message });
+      }
+    }
+    MuestrasImpresas.heredarAduanaEnNotas(lotes.flatMap((l) => l.docs));
+
+    for (const { filePath, docs } of lotes) {
       const sourceFile = path.basename(filePath).toLowerCase();
       const isPruebas  = /envio-set-(basico|guia|exenta|compra|exportacion\d?)\.xml/i.test(sourceFile);
       const targetDir  = isPruebas ? pruebasDir : simulacionDir;
-
-      let docs;
-      try {
-        docs = this.parseEnvioDTE(fs.readFileSync(filePath, 'utf8'));
-      } catch (e) {
-        resultado.errores.push({ file: filePath, error: e.message });
-        continue;
-      }
 
       for (const doc of docs) {
         resultado.totalDocs++;
@@ -1519,6 +1546,42 @@ class MuestrasImpresas {
 
     if (resultado.errores.length > 0) resultado.success = false;
     return resultado;
+  }
+
+  /**
+   * Una nota de exportación (111/112) que no trae puertos ni bultos propios toma, solo para la
+   * impresión, los datos de embarque del documento de exportación al que referencia (siguiendo
+   * la cadena ND → NC → factura). El manual de muestras los pide obligatorios cuando hay
+   * transporte de mercaderías. Deja el resultado en `doc.aduanaReferida`; no toca el XML.
+   * @param {object[]} docs - documentos ya parseados con parseEnvioDTE
+   */
+  static heredarAduanaEnNotas(docs) {
+    const porClave = new Map(docs.map((d) => [`${Number(d.tipoDte)}_${Number(d.folio)}`, d]));
+    const CAMPOS = ['CodPtoEmbarque', 'CodPtoDesemb', 'TotBultos', 'TipoBultos', 'CodViaTransp', 'CodPaisDestin'];
+    const aduanaDe = (doc, vistos = new Set()) => {
+      const propia = doc.transporte?.Aduana || {};
+      if (propia.CodPtoEmbarque || propia.TotBultos) return propia;
+      for (const ref of doc.referencias || []) {
+        const clave = `${Number(ref?.TpoDocRef)}_${Number(ref?.FolioRef)}`;
+        const otro = porClave.get(clave);
+        if (!otro || otro === doc || vistos.has(clave) || !TIPOS_EXPORTACION.has(Number(otro.tipoDte))) continue;
+        vistos.add(clave);
+        const a = aduanaDe(otro, vistos);
+        if (a) return a;
+      }
+      return null;
+    };
+    for (const doc of docs) {
+      if (![111, 112].includes(Number(doc.tipoDte))) continue;
+      const propia = doc.transporte?.Aduana || {};
+      if (propia.CodPtoEmbarque || propia.TotBultos) continue;
+      const a = aduanaDe(doc);
+      if (!a) continue;
+      const heredada = {};
+      for (const c of CAMPOS) if (a[c] !== undefined && a[c] !== '') heredada[c] = a[c];
+      if (Object.keys(heredada).length) doc.aduanaReferida = heredada;
+    }
+    return docs;
   }
 
   /**

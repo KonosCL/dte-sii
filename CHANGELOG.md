@@ -5,6 +5,16 @@ Versionado [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Corregido
+- Muestras impresas de exportación: las notas 111/112 sin puertos ni bultos propios imprimen los
+  datos de embarque del documento que corrigen (el manual de muestras los pide obligatorios
+  cuando hay transporte de mercaderías). Solo afecta el PDF; el XML no cambia.
+- Muestras impresas: las referencias a documentos de Aduana (DUS, AWB, MIC/DTA, Resolución SNA,
+  Pasaporte…) y al SET se imprimen con su nombre en vez de "Tipo 807".
+- Muestras impresas: el recargo por línea se imprime bajo la descripción (antes la línea mostraba
+  cantidad × precio distinto del valor sin explicar por qué).
+- Muestras impresas: una glosa larga de recargo o descuento global achica la letra antes de cortarse.
+
 <!-- Los PRs agregan aca, sin elegir numero de version. Al publicar, esta seccion
      pasa a ser una version numerada con su fecha. Ver CONTRIBUTING.md. -->
 
