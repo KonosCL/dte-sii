@@ -49,6 +49,9 @@ Versionado [SemVer](https://semver.org/lang/es/).
   Si el tiempo se agota con sets que la página nunca mostró, el resultado trae `sinEstado`.
 - `CertRunner._cafsDelPlan` exigía CAF para tipos con 0 casos en el plan del set.
 - `MuestrasImpresas.generarMuestras` clasificaba los envíos de exportación como simulación.
+- **Exportación: la comisión "11% DEL TOTAL DE LA CLAUSULA" iba como 11% de las líneas**; el SII
+  revisó el set "CONTENIDO NO CORRESPONDE A LO ESPERADO". Ahora va como monto: el porcentaje del
+  TOTAL CLAUSULA DE VENTA del caso.
 - **Exportación: el SII reparaba los bultos sin Marcas y los contenedores sin Id. Container ni
   Sello** (reparo HED-2-804 "Campo obligatorio", medido en el ambiente de certificación el
   30-09-2026, aunque el formato DTE los muestre como opcionales). Cada `TipoBultos` lleva

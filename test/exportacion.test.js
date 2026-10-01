@@ -539,6 +539,7 @@ test("formato real: flete y seguro como recargos, servicios e IndServicio, líne
   assert.equal(s2.Detalle[1].DescuentoPct, undefined, "el descuento es solo de la línea 1");
   assert.deepEqual(s2.Referencia.slice(1).map((r) => r.TpoDocRef), [807, 809]);
   assert.deepEqual(s2.DscRcgGlobal.map((d) => d.GlosaDR), ["COMISIONES EN EL EXTRANJERO", "FLETE", "SEGURO"]);
+  assert.deepEqual([s2.DscRcgGlobal[0].TpoValor, s2.DscRcgGlobal[0].ValorDR], ["$", 466.98], "11% del total de la cláusula (4245.30), como monto");
   assert.equal(s3.Encabezado.IdDoc.IndServicio, 4, "alojamiento con nacionalidad: hotelería");
   assert.equal(s3.Encabezado.Receptor.Extranjero.Nacionalidad, 331);
   assert.equal(s3.Encabezado.Transporte, undefined);

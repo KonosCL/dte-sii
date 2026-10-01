@@ -244,7 +244,16 @@ class SetExportacion extends SetBase {
       movimientos.push({ tipo: 'D', valor: caso.descuentoGlobal, glosa: 'DESCUENTO GLOBAL' });
     }
     if (caso.comisionExtranjero) {
-      movimientos.push({ tipo: this._tipoComision(caso), valor: caso.comisionExtranjero, glosa: 'COMISIONES EN EL EXTRANJERO' });
+      // "11% DEL TOTAL DE LA CLAUSULA": la base es TOTAL CLAUSULA DE VENTA, no la suma de las
+      // líneas, así que va como monto. Como porcentaje el SII lo revisó "CONTENIDO NO
+      // CORRESPONDE A LO ESPERADO" (certificación, 30-09-2026).
+      const sobreClausula = /TOTAL\s+DE\s+LA\s+CLAUSULA/i.test(String(caso.comisionTexto || ''));
+      if (sobreClausula && !(Number(caso.totalClausula) > 0)) {
+        throw new Error(`Caso ${caso.id}: la comisión es sobre el total de la cláusula y el set no trae TOTAL CLAUSULA DE VENTA`);
+      }
+      movimientos.push(sobreClausula
+        ? { tipo: this._tipoComision(caso), valor: Math.round(Number(caso.totalClausula) * Number(caso.comisionExtranjero)) / 100, enPorcentaje: false, glosa: 'COMISIONES EN EL EXTRANJERO' }
+        : { tipo: this._tipoComision(caso), valor: caso.comisionExtranjero, glosa: 'COMISIONES EN EL EXTRANJERO' });
     }
     // "(**) Las cifras de flete y seguro deben indicarse en los campos informativos del
     // encabezado ... y también en el área de recargo como dos líneas distintas de recargos
