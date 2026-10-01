@@ -94,15 +94,93 @@ class SetExportacion extends SetBase {
     super(deps);
 
     this.key = deps.key || 'exportacion1';
-    this.label = this.key === 'exportacion2'
-      ? 'Set Documentos de Exportación (2)'
-      : 'Set Documentos de Exportación';
+    // Simulación: documentos "de la operación real", sin la referencia al SET de pruebas. Con
+    // esa referencia el SII los tomaría como casos del set.
+    this.sinReferenciaSet = !!deps.sinReferenciaSet;
+    this.label = this.sinReferenciaSet
+      ? 'Simulación de documentos de exportación'
+      : this.key === 'exportacion2'
+        ? 'Set Documentos de Exportación (2)'
+        : 'Set Documentos de Exportación';
     // Orden de emisión: facturas, notas de crédito y después de débito (una ND suele anular
     // una NC del mismo set).
     this.tiposDte = [110, 112, 111];
 
     // { casoId: { tipoDte, folio, fecha, items, moneda, dscRcg, receptor, indServicio } }
     this._docRefs = {};
+  }
+
+  /**
+   * Casos para la simulación de exportación, en el mismo formato que SetParser: una factura de
+   * exportación de servicios (IndServicio 3), una nota de crédito que corrige su monto y una nota
+   * de débito que anula esa nota. Se emiten con `sinReferenciaSet: true`.
+   *
+   * La página de simulación del SII exige que el envío "contenga todos los tipos de documentos
+   * que está certificando", y la revisión de muestras impresas pide una muestra de simulación de
+   * cada tipo. Los sets de exportación se envían aparte, así que la simulación nacional no los
+   * trae: estos tres documentos cubren 110, 112 y 111.
+   *
+   * Es una exportación de servicios a propósito: no lleva puertos, bultos ni cláusula de venta
+   * (el manual de muestras no los exige en servicios) y es la forma de exportación más común de
+   * un emisor que no despacha mercadería. Lo que dependa de la operación real del emisor se
+   * recibe por parámetro.
+   *
+   * @param {Object} [op]
+   * @param {string} [op.item='SERVICIOS PROFESIONALES'] - glosa del servicio exportado
+   * @param {number} [op.monto=1000] - valor de la factura, en la moneda
+   * @param {number} [op.montoNotaCredito] - valor que corrige la nota de crédito (default: 20% del monto)
+   * @param {string} [op.moneda='DOLAR USA'] - glosa de moneda del SII
+   * @param {string} [op.pais='ALEMANIA'] - país del cliente (receptor y destino)
+   * @param {string} [op.formaPago='ACRED'] - forma de pago de exportación (tabla de Aduana)
+   * @param {string[]} [op.referencias=['RESOLUCION SNA']] - documentos de Aduana citados por la factura
+   * @returns {{ nombre: string, numeroAtencion: null, casos: Object[], cafRequired: Object }}
+   */
+  static casosSimulacion(op = {}) {
+    const item = String(op.item || 'SERVICIOS PROFESIONALES').trim().toUpperCase().slice(0, 80);
+    const monto = Number(op.monto ?? 1000);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      throw new Error(`Simulación de exportación: monto inválido (${op.monto})`);
+    }
+    const montoNc = Number(op.montoNotaCredito ?? Math.round(monto * 20) / 100);
+    if (!Number.isFinite(montoNc) || montoNc <= 0 || montoNc >= monto) {
+      throw new Error(`Simulación de exportación: el monto de la nota de crédito (${op.montoNotaCredito}) ` +
+        `tiene que ser positivo y menor que el de la factura (${monto})`);
+    }
+    const factura = {
+      id: 'SIMULACION-EXP-1',
+      tipoDTE: 110,
+      documento: 'FACTURA DE EXPORTACION ELECTRONICA',
+      items: [{ nombre: item, cantidad: 1, precio: monto }],
+      itemsValorLinea: true,
+      moneda: op.moneda || 'DOLAR USA',
+      formaPago: op.formaPago || 'ACRED',
+      paisDestino: op.pais || 'ALEMANIA',
+      referenciasExportacion: op.referencias || ['RESOLUCION SNA'],
+    };
+    const notaCredito = {
+      id: 'SIMULACION-EXP-2',
+      tipoDTE: 112,
+      documento: 'NOTA DE CREDITO DE EXPORTACION ELECTRONICA',
+      referenciaCaso: factura.id,
+      codRef: 3,
+      razonRef: 'CORRIGE MONTO',
+      items: [{ nombre: item, precio: montoNc }],
+    };
+    const notaDebito = {
+      id: 'SIMULACION-EXP-3',
+      tipoDTE: 111,
+      documento: 'NOTA DE DEBITO DE EXPORTACION ELECTRONICA',
+      referenciaCaso: notaCredito.id,
+      codRef: 1,
+      razonRef: 'ANULA NOTA DE CREDITO',
+      items: [],
+    };
+    return {
+      nombre: 'SIMULACION DOCUMENTOS DE EXPORTACION',
+      numeroAtencion: null,
+      casos: [factura, notaCredito, notaDebito],
+      cafRequired: { 110: 1, 112: 1, 111: 1 },
+    };
   }
 
   /** @override */
@@ -283,7 +361,7 @@ class SetExportacion extends SetBase {
     const receptor = this._receptor(nacionalidad, docRef);
     const transporte = this._transporte(caso, { pais, Totales, indServicio, resolver, avisos, esNota });
 
-    const referencias = [buildSetReferencia(caso.id, fecha)];
+    const referencias = this.sinReferenciaSet ? [] : [buildSetReferencia(caso.id, fecha)];
     // Hotelería (IndServicio 4): el SII exige una segunda referencia, el pasaporte del
     // huésped (813): "El Documento Debe Tener 2 Linea(s) de Referencia" (certificación, 30-09-2026).
     const refsAduana = [...(caso.referenciasExportacion || [])];

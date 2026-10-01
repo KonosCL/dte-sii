@@ -5,6 +5,15 @@ Versionado [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+### Agregado
+- `CertRunner.ejecutarSimulacionExportacion()` y `SetExportacion.casosSimulacion()`: simulación
+  de exportación (factura de servicios, nota de crédito y nota de débito, sin referencia al SET)
+  en un envío propio, para que la revisión de muestras impresas tenga una muestra de simulación
+  de 110, 112 y 111. La página de simulación del SII exige "todos los tipos de documentos que
+  está certificando" y la simulación nacional no los trae.
+- `SetExportacion` acepta `sinReferenciaSet` (para la simulación) y `CertRunner._createEnviador`
+  acepta `{ archivo }` para guardar el envío fuera de `sets-prueba/`.
+
 ### Corregido
 - Muestras impresas de exportación: las notas 111/112 sin puertos ni bultos propios imprimen los
   datos de embarque del documento que corrigen (el manual de muestras los pide obligatorios

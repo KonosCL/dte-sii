@@ -942,19 +942,22 @@ class CertRunner {
    * @param {string} [setName] - Nombre del set para guardar XML (ej: 'basico', 'guia')
    * @returns {Object} Enviador compatible con Sets
    */
-  _createEnviador(setName = null) {
+  _createEnviador(setName = null, { archivo = null } = {}) {
     const enviador = new EnviadorSII(this.certificado, this.ambiente);
     const debugDir = this.debugDir;
 
     return {
       async enviar(envio) {
-        // Guardar XML del set antes de enviar (para muestras impresas)
+        // Guardar XML del set antes de enviar (para muestras impresas). `archivo` (relativo a
+        // debugDir) cambia dónde: la simulación de exportación va junto a la simulación.
         if (setName && debugDir && envio.xml) {
-          const setsDir = path.join(debugDir, 'sets-prueba');
+          const envioPath = archivo
+            ? path.join(debugDir, archivo)
+            : path.join(debugDir, 'sets-prueba', `envio-set-${setName}.xml`);
+          const setsDir = path.dirname(envioPath);
           fs.mkdirSync(setsDir, { recursive: true });
-          
+
           // Guardar envío consolidado
-          const envioPath = path.join(setsDir, `envio-set-${setName}.xml`);
           fs.writeFileSync(envioPath, envio.xml, 'utf8');
           // Guardar DTEs individuales
           if (envio.dtes && envio.dtes.length > 0) {
@@ -1087,6 +1090,44 @@ class CertRunner {
   /** Segundo set de exportación ("SET DOCUMENTOS DE EXPORTACION(2)"). */
   async ejecutarSetExportacion2(casos) {
     return this._ejecutarSetExportacion('exportacion2', 'setExportacion2', casos);
+  }
+
+  /**
+   * Simulación de exportación: factura, nota de crédito y nota de débito de exportación "de la
+   * operación real" (sin referencia al SET), en un envío propio. Cubre los tipos 110, 112 y 111
+   * que la simulación nacional no trae; sus muestras impresas van como muestras de simulación.
+   * El envío queda en `debug/simulacion/envio-simulacion-exportacion.xml`.
+   *
+   * Pide tres folios (uno por tipo). Requiere en la config `receptorExtranjero` y
+   * `exportacion.tiposCambio` con la moneda de la simulación.
+   *
+   * @param {Object} [opciones] - ver SetExportacion.casosSimulacion; por defecto
+   *   `config.exportacion.simulacion`
+   * @returns {Promise<{ success: boolean, trackId?: string, documentos?: Object[], error?: string }>}
+   */
+  async ejecutarSimulacionExportacion(opciones = {}) {
+    const casos = SetExportacion.casosSimulacion({ ...(this.config.exportacion?.simulacion || {}), ...opciones });
+    emitProgress(STEPS.SET_START, { set: 'simulacion-exportacion' });
+    // Folios propios: la precarga de los sets (si corrió en este proceso) ya gastó los suyos, y
+    // reusar ese plan haría que `_tomarFolio` se quede sin rango.
+    const precargaDeLosSets = this._cafsPrecargados;
+    this._cafsPrecargados = null;
+    let r;
+    try {
+      r = await this._ejecutarSet(SetExportacion, null, 'simulacionExportacion', casos.cafRequired,
+        null, casos, {
+          key: 'simulacion-exportacion',
+          sinReferenciaSet: true,
+          enviador: this._createEnviador('simulacion-exportacion', {
+            archivo: path.join('simulacion', 'envio-simulacion-exportacion.xml'),
+          }),
+        });
+    } finally {
+      this._cafsPrecargados = precargaDeLosSets;
+    }
+    if (r.success) emitProgress(STEPS.SET_OK, { set: 'simulacion-exportacion', trackId: r.trackId });
+    else emitProgress(STEPS.SET_ERROR, { set: 'simulacion-exportacion', error: r.error });
+    return r;
   }
 
   /** @private */

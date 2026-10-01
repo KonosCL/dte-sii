@@ -1083,6 +1083,30 @@ const runner = new CertRunner({
 - `SetExportacion.planificar(casos)` arma los documentos sin folios ni firma, para revisarlos
   contra el set antes de emitir.
 
+#### Simulación de exportación
+
+La página de simulación del SII exige que el envío "contenga todos los tipos de documentos que
+está certificando", y la revisión de muestras impresas pide una muestra de simulación de cada
+tipo. La simulación nacional no trae documentos de exportación, así que una empresa que
+certifica 110/111/112 necesita además:
+
+```javascript
+const r = await runner.ejecutarSimulacionExportacion({
+  item: 'SERVICIOS DE DISENO WEB',   // glosa del servicio que exporta la empresa
+  monto: 1500,                       // en la moneda; la nota de crédito corrige el 20% por defecto
+  moneda: 'DOLAR USA',               // necesita su tipo de cambio en exportacion.tiposCambio
+  pais: 'ESTADOS UNIDOS',
+})
+// r.trackId: el envío, con una factura de exportación de servicios, la nota de crédito que
+// corrige su monto y la nota de débito que anula esa nota. Pide un folio de cada tipo.
+```
+
+Los documentos van sin la referencia al SET de pruebas y el envío queda en
+`debug/simulacion/envio-simulacion-exportacion.xml`, donde `MuestrasImpresas.buscarXmls()` lo
+encuentra y sus muestras salen como muestras de simulación. Los parámetros también se pueden
+dejar en `config.exportacion.simulacion`. `SetExportacion.casosSimulacion(opciones)` devuelve los
+tres casos sin emitir nada.
+
 ---
 
 ## Depuración: captura de llamadas al SII
