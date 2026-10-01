@@ -543,6 +543,7 @@ test("formato real: flete y seguro como recargos, servicios e IndServicio, líne
   assert.equal(s3.Encabezado.IdDoc.IndServicio, 4, "alojamiento con nacionalidad: hotelería");
   assert.equal(s3.Encabezado.Receptor.Extranjero.Nacionalidad, 331);
   assert.equal(s3.Encabezado.Transporte, undefined);
+  assert.deepEqual(s3.Referencia.map((r) => r.TpoDocRef), ["SET", 813], "hotelería: pasaporte como segunda referencia");
 
   assert.throws(() => crearSet("exportacion2", CERT, { tiposCambio: EXPO_REAL.tiposCambio, ...BULTOS }).planificar(estReal.setExportacion2),
     /folioReferencia/, "el número del documento de Aduana no se inventa");

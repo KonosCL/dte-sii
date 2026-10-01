@@ -284,7 +284,11 @@ class SetExportacion extends SetBase {
     const transporte = this._transporte(caso, { pais, Totales, indServicio, resolver, avisos, esNota });
 
     const referencias = [buildSetReferencia(caso.id, fecha)];
-    for (const texto of caso.referenciasExportacion || []) {
+    // Hotelería (IndServicio 4): el SII exige una segunda referencia, el pasaporte del
+    // huésped (813): "El Documento Debe Tener 2 Linea(s) de Referencia" (certificación, 30-09-2026).
+    const refsAduana = [...(caso.referenciasExportacion || [])];
+    if (!esNota && Number(indServicio) === IND_SERVICIO_HOTELERIA && !refsAduana.length) refsAduana.push('PASAPORTE');
+    for (const texto of refsAduana) {
       referencias.push({
         NroLinRef: referencias.length + 1,
         TpoDocRef: this._tpoDocRefExportacion(caso, texto),

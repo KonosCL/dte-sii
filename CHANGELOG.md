@@ -49,6 +49,9 @@ Versionado [SemVer](https://semver.org/lang/es/).
   Si el tiempo se agota con sets que la página nunca mostró, el resultado trae `sinEstado`.
 - `CertRunner._cafsDelPlan` exigía CAF para tipos con 0 casos en el plan del set.
 - `MuestrasImpresas.generarMuestras` clasificaba los envíos de exportación como simulación.
+- **Exportación: la factura de hotelería (IndServicio 4) iba con una sola referencia**; el SII
+  rechazó el set con "El Documento Debe Tener 2 Linea(s) de Referencia". Ahora lleva también el
+  pasaporte del huésped (TpoDocRef 813), con el folio de `config.exportacion.folioReferencia`.
 - **Exportación: la comisión "11% DEL TOTAL DE LA CLAUSULA" iba como 11% de las líneas**; el SII
   revisó el set "CONTENIDO NO CORRESPONDE A LO ESPERADO". Ahora va como monto: el porcentaje del
   TOTAL CLAUSULA DE VENTA del caso.
