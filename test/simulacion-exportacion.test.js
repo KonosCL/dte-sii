@@ -132,15 +132,19 @@ test('plan: ningún documento referencia al SET; las notas encadenan factura →
   for (const p of plan) {
     assert.ok(!p.datos.Referencia.some((r) => r.TpoDocRef === 'SET'), `${p.tipoDte} sin referencia al SET`);
     assert.equal(p.datos.Referencia[0].NroLinRef, 1, 'las líneas de referencia parten en 1');
+    assert.equal(p.datos.Referencia[0].TpoDocRef, 812, 'las tres citan la Resolución SNA');
     assert.equal(p.datos.Encabezado.IdDoc.IndServicio, 3, 'exportación de servicios');
   }
   const [f, nc, nd] = plan.map((p) => p.datos);
   assert.deepEqual(f.Referencia, [{ NroLinRef: 1, TpoDocRef: 812, FolioRef: '1', FchRef: f.Encabezado.IdDoc.FchEmis }]);
-  assert.deepEqual(nc.Referencia, [{
-    NroLinRef: 1, TpoDocRef: 110, FolioRef: f.Encabezado.IdDoc.Folio, FchRef: f.Encabezado.IdDoc.FchEmis, CodRef: 3, RazonRef: 'CORRIGE MONTO',
-  }]);
-  assert.equal(nd.Referencia[0].TpoDocRef, 112);
-  assert.equal(nd.Referencia[0].CodRef, 1);
+  // REF-2-826: las notas de servicios también citan la Resolución SNA.
+  assert.deepEqual(nc.Referencia, [
+    { NroLinRef: 1, TpoDocRef: 812, FolioRef: '1', FchRef: nc.Encabezado.IdDoc.FchEmis },
+    { NroLinRef: 2, TpoDocRef: 110, FolioRef: f.Encabezado.IdDoc.Folio, FchRef: f.Encabezado.IdDoc.FchEmis, CodRef: 3, RazonRef: 'CORRIGE MONTO' },
+  ]);
+  assert.equal(nd.Referencia[0].TpoDocRef, 812);
+  assert.equal(nd.Referencia[1].TpoDocRef, 112);
+  assert.equal(nd.Referencia[1].CodRef, 1);
   assert.deepEqual([f, nc, nd].map((d) => d.Encabezado.Totales.MntTotal), [1000, 200, 200]);
   assert.deepEqual([f, nc, nd].map((d) => d.Encabezado.OtraMoneda.MntTotOtrMnda), [945120, 189024, 189024]);
 });

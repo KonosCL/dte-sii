@@ -157,6 +157,9 @@ class SetExportacion extends SetBase {
       paisDestino: op.pais || 'ALEMANIA',
       referenciasExportacion: op.referencias || ['RESOLUCION SNA'],
     };
+    // Las notas de una exportación de servicios también citan la Resolución SNA: sin ella el SII
+    // deja reparo REF-2-826 "Export.: Falta la Resolución del SNA" (certificación, 30-09-2026).
+    const refsNotas = (factura.referenciasExportacion || []).filter((r) => /SNA/i.test(r));
     const notaCredito = {
       id: 'SIMULACION-EXP-2',
       tipoDTE: 112,
@@ -165,6 +168,7 @@ class SetExportacion extends SetBase {
       codRef: 3,
       razonRef: 'CORRIGE MONTO',
       items: [{ nombre: item, precio: montoNc }],
+      referenciasExportacion: refsNotas,
     };
     const notaDebito = {
       id: 'SIMULACION-EXP-3',
@@ -174,6 +178,7 @@ class SetExportacion extends SetBase {
       codRef: 1,
       razonRef: 'ANULA NOTA DE CREDITO',
       items: [],
+      referenciasExportacion: refsNotas,
     };
     return {
       nombre: 'SIMULACION DOCUMENTOS DE EXPORTACION',
