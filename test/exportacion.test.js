@@ -549,6 +549,26 @@ test("formato real: flete y seguro como recargos, servicios e IndServicio, líne
     /folioReferencia/, "el número del documento de Aduana no se inventa");
 });
 
+test("formato real: SIN PAGO lleva OtraMoneda en cero y sin tipo de cambio (HED-1-803)", () => {
+  const p2 = crearSet("exportacion2", CERT, EXPO_REAL).planificar(estReal.setExportacion2);
+  const [s1, s2, s3] = p2.map((p) => p.datos.Encabezado);
+  for (const s of [s1, s2]) {
+    assert.equal(s.IdDoc.FmaPagExp, 21);
+    assert.deepEqual(s.OtraMoneda, { TpoMoneda: "PESO CL", MntExeOtrMnda: 0, MntTotOtrMnda: 0 });
+    assert.ok(s.Totales.MntTotal > 0, "los totales en la moneda de la operación no cambian");
+    assert.equal(s.Totales.TpoMoneda, "LIBRA EST");
+  }
+  assert.equal(s3.IdDoc.FmaPagExp, undefined, "sin forma de pago en el set no se inventa");
+  assert.deepEqual(s3.OtraMoneda, { TpoMoneda: "PESO CL", TpoCambio: 945.12, MntExeOtrMnda: 200365.44, MntTotOtrMnda: 200365.44 });
+
+  // Sin pago no necesita tipo de cambio; con pago sigue siendo obligatorio.
+  const { calcularTotalesExportacion } = require("../utils/exportacion");
+  const det = [{ NroLinDet: 1, IndExe: 1, NmbItem: "X", MontoItem: 10 }];
+  assert.deepEqual(calcularTotalesExportacion(det, [], { moneda: "LIBRA EST", sinPago: true }).OtraMoneda,
+    { TpoMoneda: "PESO CL", MntExeOtrMnda: 0, MntTotOtrMnda: 0 });
+  assert.throws(() => calcularTotalesExportacion(det, [], { moneda: "LIBRA EST" }), /tipo de cambio/);
+});
+
 test('bultos: sin marcas o sin datos del contenedor no se emite (el SII lo repara: HED-2-804)', () => {
   const sinMarcas = { tiposCambio: TIPOS_CAMBIO, contenedor: BULTOS.contenedor };
   assert.throws(() => crearSet('exportacion1', CERT, sinMarcas).planificar(estructuras.setExportacion1), /Marcas.*HED-2-804/);

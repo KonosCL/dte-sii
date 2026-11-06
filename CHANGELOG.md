@@ -17,6 +17,12 @@ Versionado [SemVer](https://semver.org/lang/es/).
   acepta `{ archivo }` para guardar el envío fuera de `sets-prueba/`.
 
 ### Corregido
+- Exportación con forma de pago SIN PAGO (FmaPagExp 21): `OtraMoneda` va con MntExeOtrMnda y
+  MntTotOtrMnda en 0 y sin TpoCambio, como lo exige el SII (reparo HED-1-803 "Forma de pago es
+  Sin Pago. Mnt.Tot.en Otra Mon. debe ser cero", certificación 06-11-2026; es lo que emite
+  LibreDTE). Los totales en la moneda de la operación no cambian. `calcularTotalesExportacion`
+  acepta `sinPago` y entonces no exige tipo de cambio. Afecta a los dos primeros casos del SET
+  DOCUMENTOS DE EXPORTACION (2).
 - Muestras impresas de exportación: las notas 111/112 sin puertos ni bultos propios imprimen los
   datos de embarque del documento que corrigen (el manual de muestras los pide obligatorios
   cuando hay transporte de mercaderías). Solo afecta el PDF; el XML no cambia.

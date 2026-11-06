@@ -43,6 +43,7 @@
 const SetBase = require('./SetBase');
 const { resolverCodigo, resolverMoneda, esPuertoChileno } = require('../utils/aduana');
 const {
+  FMA_PAG_EXP_SIN_PAGO,
   buildDetalleExportacion,
   buildDscRcgGlobalExportacion,
   calcularTotalesExportacion,
@@ -348,18 +349,24 @@ class SetExportacion extends SetBase {
       movimientos.push(...docRef.movimientos);
     }
     const dscRcg = buildDscRcgGlobalExportacion(movimientos);
-    const { Totales, OtraMoneda } = calcularTotalesExportacion(detalle, dscRcg, { moneda, tipoCambio });
+
+    // Forma de pago de exportación (FmaPagExp, tabla de Aduana). Se resuelve antes de los
+    // totales porque "sin pago" (21) cambia OtraMoneda: el SII exige el total en pesos en cero
+    // (reparo HED-1-803 "Forma de pago es Sin Pago. Mnt.Tot.en Otra Mon. debe ser cero",
+    // certificación, 06-11-2026). Los totales en la moneda de la operación se informan igual.
+    const formaPago = caso.formaPago ? resolver('formaPago', caso.formaPago, 'FORMA DE PAGO EXPORTACION') : null;
+    const sinPago = formaPago?.codigo === FMA_PAG_EXP_SIN_PAGO;
+    const { Totales, OtraMoneda } = calcularTotalesExportacion(detalle, dscRcg, { moneda, tipoCambio, sinPago });
 
     // IdDoc. En exportación no va FmaPago sino FmaPagExp (tabla de Aduana).
     const idDoc = { TipoDTE: tipo, Folio: folio, FchEmis: fecha };
     const indServicio = caso.indServicio ?? docRef?.indServicio ?? this._indServicio(caso);
     if (indServicio) idDoc.IndServicio = indServicio;
-    if (caso.formaPago) {
-      const fp = resolver('formaPago', caso.formaPago, 'FORMA DE PAGO EXPORTACION');
-      idDoc.FmaPagExp = fp.codigo;
+    if (formaPago) {
+      idDoc.FmaPagExp = formaPago.codigo;
       // "Campo obligatorio para factura de exportación cuando en Forma de Pago Exportación se
       // indique anticipo" (formato DTE): se cancela a la fecha de emisión.
-      if (fp.codigo === FMA_PAG_EXP_ANTICIPO) idDoc.FchCancel = fecha;
+      if (formaPago.codigo === FMA_PAG_EXP_ANTICIPO) idDoc.FchCancel = fecha;
     }
 
     const nacionalidad = pais || (caso.nacionalidad ? resolver('pais', caso.nacionalidad, 'NACIONALIDAD') : null);

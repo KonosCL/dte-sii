@@ -10,6 +10,11 @@
  *    4 decimales. `Totales` lleva solo TpoMoneda, MntExe y MntTotal: todo es exento.
  *  - `OtraMoneda` es obligatorio en exportación y va en pesos: TpoMoneda "PESO CL", el tipo de
  *    cambio del Banco Central del día de emisión, y MntExe/MntTotal convertidos.
+ *  - Con forma de pago "sin pago" (FmaPagExp 21: muestras, entregas gratuitas) el SII exige el
+ *    total en pesos en cero (reparo HED-1-803 "Forma de pago es Sin Pago. Mnt.Tot.en Otra Mon.
+ *    debe ser cero", certificación 06-11-2026). `OtraMoneda` va entonces con MntExeOtrMnda y
+ *    MntTotOtrMnda en 0 y sin TpoCambio (TpoCambio es opcional en el XSD; MntTotOtrMnda no),
+ *    como lo emite LibreDTE. Los totales en la moneda de la operación no cambian.
  *  - `DescuentoMonto` y `RecargoMonto` de una línea son enteros (MntImpType) aunque la línea
  *    tenga decimales: así lo define el XSD de exportación.
  *  - Ningún campo de `Transporte/Aduana` es obligatorio en el XSD. Las reglas de cuáles van
@@ -25,6 +30,9 @@ const { sanitizeSiiText, assertLargoMaximo } = require('./sanitize');
 
 /** Glosa de pesos chilenos en TipMonType: la moneda de `OtraMoneda` en exportación. */
 const MONEDA_PESOS = 'PESO CL';
+
+/** Forma de pago de exportación "sin pago" (tabla de Aduana, FmaPagExp). */
+const FMA_PAG_EXP_SIN_PAGO = 21;
 
 /**
  * Redondea un monto según la moneda: pesos a entero, cualquier otra a 4 decimales (el máximo
@@ -144,17 +152,23 @@ function buildDscRcgGlobalExportacion(movimientos = []) {
  * (en exportación no hay neto ni IVA). OtraMoneda lleva los mismos montos multiplicados por
  * el tipo de cambio, redondeados a 4 decimales como admite el XSD.
  *
+ * Con `sinPago` (forma de pago de exportación 21) OtraMoneda va en cero y sin tipo de cambio:
+ * el SII exige "Mnt.Tot.en Otra Mon." igual a cero (reparo HED-1-803) y los montos en pesos
+ * dejan de depender de una conversión. Los totales en la moneda de la operación se calculan
+ * igual, y el tipo de cambio no hace falta.
+ *
  * @param {Object[]} detalle - Salida de buildDetalleExportacion
  * @param {Object[]} [dscRcg] - Salida de buildDscRcgGlobalExportacion
  * @param {Object} opciones
  * @param {string} opciones.moneda - Glosa TipMonType de la operación
- * @param {number} opciones.tipoCambio - Pesos por unidad de la moneda (Banco Central, día de emisión)
+ * @param {number} [opciones.tipoCambio] - Pesos por unidad de la moneda (Banco Central, día de emisión). Obligatorio salvo con `sinPago`
+ * @param {boolean} [opciones.sinPago=false] - Forma de pago de exportación "sin pago" (FmaPagExp 21)
  * @returns {{ Totales: Object, OtraMoneda: Object }}
  */
-function calcularTotalesExportacion(detalle, dscRcg = [], { moneda, tipoCambio } = {}) {
+function calcularTotalesExportacion(detalle, dscRcg = [], { moneda, tipoCambio, sinPago = false } = {}) {
   if (!moneda) throw new Error('calcularTotalesExportacion: falta la moneda de la operación');
   const tc = Number(tipoCambio);
-  if (!Number.isFinite(tc) || tc <= 0) {
+  if (!sinPago && (!Number.isFinite(tc) || tc <= 0)) {
     throw new Error(
       `calcularTotalesExportacion: falta el tipo de cambio de ${moneda} a pesos. El SII exige ` +
       'OtraMoneda en exportación, con el tipo de cambio del Banco Central del día de emisión.'
@@ -169,6 +183,13 @@ function calcularTotalesExportacion(detalle, dscRcg = [], { moneda, tipoCambio }
     exento = redondearMonto(dr.TpoMov === 'D' ? exento - valor : exento + valor, moneda);
   }
   if (exento < 0) throw new Error(`calcularTotalesExportacion: el total quedó negativo (${exento})`);
+
+  if (sinPago) {
+    return {
+      Totales: { TpoMoneda: moneda, MntExe: exento, MntTotal: exento },
+      OtraMoneda: { TpoMoneda: MONEDA_PESOS, MntExeOtrMnda: 0, MntTotOtrMnda: 0 },
+    };
+  }
 
   const tipoCambioSii = redondear(tc, 4);
   const enPesos = redondear(exento * tipoCambioSii, 4);
@@ -240,6 +261,7 @@ function buildTransporteExportacion(transporte = {}) {
 
 module.exports = {
   MONEDA_PESOS,
+  FMA_PAG_EXP_SIN_PAGO,
   redondearMonto,
   buildDetalleExportacion,
   buildDscRcgGlobalExportacion,
